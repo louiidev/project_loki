@@ -10,16 +10,20 @@ import sg "../sokol/gfx"
 import stbi "vendor:stb/image"
 import stbrp "vendor:stb/rect_pack"
 
-Image_Id :: enum {
+ImageId :: enum {
 	nil,
 	player,
 	projectiles,
+	weapons,
+	enemies,
 }
 
-Image_Column_Rows_Count := [Image_Id][2]int {
+Image_Column_Rows_Count := [ImageId][2]int {
 	.nil         = {0, 0},
 	.player      = {7, 2},
 	.projectiles = {3, 2},
+	.weapons     = {3, 1},
+	.enemies     = {4, 4},
 }
 
 
@@ -38,22 +42,13 @@ init_images :: proc() {
 	img_dir := "./assets/sprites/"
 
 	highest_id := 0
-	// buffer: [^]byte // Pointer to a dynamic array of bytes
-	// image_data := make([^]byte, 4) // Allocate a dynamic array of 10 bytes
-	// // // defer free(buffer)
-
-	// image_data[0] = 255 // Red
-	// image_data[1] = 255 // Green
-	// image_data[2] = 255 // Blue
-	// image_data[3] = 255 // Alpha
-	images[Image_Id.nil] = Image {
+	images[ImageId.nil] = Image {
 		width  = 1,
 		height = 1,
 		data   = raw_data(blank),
 	}
 
-
-	for img_name, id in Image_Id {
+	for img_name, id in ImageId {
 		if id == 0 {continue}
 
 		if id > highest_id {
@@ -71,34 +66,8 @@ init_images :: proc() {
 	}
 	pack_images_into_atlas()
 
-	//images[0].atlas_uvs = {0.99, 0.99, 1.0, 1.0}
 }
 
-
-// load_white_image :: proc() -> (Image, bool) {
-
-// 	blank: []byte = {255, 255, 255, 255}
-
-// 	img_data := stbi.write_png_to_func()(
-// 		raw_data(blank),
-// 		auto_cast len(blank),
-// 		&1,
-// 		&1,
-// 		&channels,
-// 		4,
-// 	)
-// 	if img_data == nil {
-// 		fmt.println("stbi load failed, invalid image?")
-// 		return {}, false
-// 	}
-
-// 	ret: Image
-// 	ret.width = 1
-// 	ret.height = 1
-// 	ret.data = img_data
-
-// 	return ret, true
-// }
 
 load_image_from_disk :: proc(path: string) -> (Image, bool) {
 	stbi.set_flip_vertically_on_load(1)
@@ -128,7 +97,6 @@ load_image_from_disk :: proc(path: string) -> (Image, bool) {
 	ret.height = height
 	ret.data = img_data
 
-	fmt.println(ret)
 
 	return ret, true
 }
@@ -138,16 +106,17 @@ Atlas :: struct {
 	sg_image: sg.Image,
 }
 atlas: Atlas
+atlas_width :: 250
 // We're hardcoded to use just 1 atlas now since I don't think we'll need more
 // It would be easy enough to extend though. Just add in more texture slots in the shader
 pack_images_into_atlas :: proc() {
 
 	// 8192 x 8192 is the WGPU recommended max I think
-	atlas.w = 128
-	atlas.h = 128
+	atlas.w = atlas_width
+	atlas.h = atlas_width
 
 	cont: stbrp.Context
-	nodes: [128]stbrp.Node // #volatile with atlas.w
+	nodes: [atlas_width]stbrp.Node // #volatile with atlas.w
 	stbrp.init_target(&cont, auto_cast atlas.w, auto_cast atlas.h, &nodes[0], auto_cast atlas.w)
 
 	rects: [dynamic]stbrp.Rect
@@ -186,7 +155,7 @@ pack_images_into_atlas :: proc() {
 		}
 
 		// yeet old data
-		if (rect.id != auto_cast Image_Id.nil) {stbi.image_free(img.data)}
+		if (rect.id != auto_cast ImageId.nil) {stbi.image_free(img.data)}
 		img.data = nil
 
 		img.atlas_x = auto_cast rect.x
@@ -224,12 +193,16 @@ pack_images_into_atlas :: proc() {
 }
 
 
-get_frame_uvs :: proc(sprite_id: Image_Id, sprite_index: Vector2, frame_size: Vector2) -> Vector4 {
+get_frame_uvs :: proc(
+	sprite_id: ImageId,
+	sprite_index: Vector2Int,
+	frame_size: Vector2,
+) -> Vector4 {
 
 	row_column_data := Image_Column_Rows_Count[sprite_id]
 
 	// We want to reverse the y sprite index since we need to flip the image on load
-	sprite_index_y: f32 = f32(0 + max(row_column_data.y - 1)) - sprite_index.y
+	sprite_index_y: int = 0 + max(row_column_data.y - 1) - sprite_index.y
 
 
 	sprite := images[sprite_id]
@@ -238,8 +211,8 @@ get_frame_uvs :: proc(sprite_id: Image_Id, sprite_index: Vector2, frame_size: Ve
 	y := int(sprite.atlas_uvs.y * f32(atlas.h))
 
 	// Calculate the pixel coordinates for the top-left corner of the frame
-	frame_x := x + auto_cast (sprite_index.x * frame_size.x)
-	frame_y := y + auto_cast (sprite_index_y * frame_size.y)
+	frame_x := x + sprite_index.x * auto_cast frame_size.x
+	frame_y := y + sprite_index_y * auto_cast frame_size.y
 
 	// Convert back to UV coordinates
 	left := f32(frame_x) / f32(atlas.w)
@@ -247,5 +220,5 @@ get_frame_uvs :: proc(sprite_id: Image_Id, sprite_index: Vector2, frame_size: Ve
 	right := f32(frame_x + auto_cast frame_size.x) / f32(atlas.w)
 	bottom := f32(frame_y + auto_cast frame_size.y) / f32(atlas.h)
 
-	return Vector4{left, top, right, bottom}
+	return {left, top, right, bottom}
 }

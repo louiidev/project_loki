@@ -45,7 +45,7 @@ DrawQuad :: struct {
 	size:   Vector2,
 	color:  Vector4,
 	uv:     [4]Vector2,
-	img_id: Image_Id,
+	img_id: ImageId,
 }
 
 
@@ -140,7 +140,7 @@ gfx_init :: proc() {
 draw_quad_xform :: proc(
 	xform: Matrix4,
 	size: Vector2,
-	img_id: Image_Id = .nil,
+	img_id: ImageId = .nil,
 	uv: Vector4 = DEFAULT_UV,
 	col: Vector4 = COLOR_WHITE,
 ) {
@@ -150,6 +150,22 @@ draw_quad_xform :: proc(
 		&draw_frame,
 	)
 }
+
+draw_quad_center_xform :: proc(
+	xform: Matrix4,
+	size: Vector2,
+	img_id: ImageId = .nil,
+	uv: Vector4 = DEFAULT_UV,
+	col: Vector4 = COLOR_WHITE,
+) {
+	xform := xform * linalg.matrix4_translate(Vector3{-size.x * 0.5, -size.y * 0.5, 0.0})
+	draw_quad_xform_in_frame(
+		{size = size, uv = {uv.xy, uv.xw, uv.zw, uv.zy}, color = col, img_id = img_id},
+		xform,
+		&draw_frame,
+	)
+}
+
 
 draw_quad_xform_in_frame :: proc(quad: DrawQuad, xform: Matrix4, frame: ^DrawFrame) {
 	if draw_frame.quad_count >= MAX_QUADS {

@@ -19,9 +19,8 @@ Inputs :: struct {
 inputs: Inputs
 event_cb :: proc "c" (event: ^sapp.Event) {
 	context = runtime.default_context()
-
-	// inputs.screen_mouse_pos.x = event.mouse_x
-	// inputs.screen_mouse_pos.y = graphics->window_size.y - event->mouse_y
+	inputs.screen_mouse_pos.x = event.mouse_x
+	inputs.screen_mouse_pos.y = auto_cast (sapp.height() - auto_cast event.mouse_y)
 	// inputs.mouse_pos.x = event->mouse_x - graphics->viewport_pos.x
 	// inputs.mouse_pos.y = event->mouse_y - graphics->viewport_pos.y
 
