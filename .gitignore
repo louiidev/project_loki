@@ -1,5 +1,6 @@
 .build/**
 src.exe
+src.bin
 *.pdb
 *.rdbg
 src/shader.glsl_hlsl5_fs.glsl

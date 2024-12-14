@@ -240,15 +240,14 @@ gfx_update :: proc() {
 	draw_frame_reset(&draw_frame)
 
 }
-
+pixel_width: f32 = 320
+pixel_height: f32 = 180
 draw_frame_reset :: proc(frame: ^DrawFrame) {
 	using runtime, linalg
 
 	memset(&draw_frame, 0, size_of(draw_frame))
-	draw_frame.shader_extension = default_pipeline
+	frame.shader_extension = default_pipeline
 
-	pixel_width: f32 = 320
-	pixel_height: f32 = 180
 
 	frame.projection = matrix_ortho3d_f32(
 		pixel_width * -0.5,

@@ -16,6 +16,7 @@ ImageId :: enum {
 	projectiles,
 	weapons,
 	enemies,
+	tiles,
 }
 
 Image_Column_Rows_Count := [ImageId][2]int {
@@ -24,6 +25,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.projectiles = {3, 2},
 	.weapons     = {3, 1},
 	.enemies     = {4, 4},
+	.tiles       = {2, 2},
 }
 
 

@@ -24,6 +24,12 @@ mat4 :: Matrix4
 
 COLOR_WHITE :: Vector4{1, 1, 1, 1}
 
+
+extend :: proc(v: Vector2, z: f32 = 0.0) -> Vector3 {
+	return {v.x, v.y, z}
+}
+
+
 radians :: proc(degrees: f32) -> f32 {return degrees * TAU / 360.0}
 
 up :: proc() -> v3 {return {0.0, 1.0, 0.0}}

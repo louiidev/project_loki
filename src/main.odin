@@ -35,6 +35,7 @@ Entity :: struct {
 	roll_speed:               f32,
 	active:                   bool,
 	health:                   int,
+	max_health:               int,
 	collision_radius:         f32,
 	knockback_timer:          f32,
 	knockback_direction:      Vector2,
@@ -48,12 +49,20 @@ Entity :: struct {
 	animation_state:          AnimationState,
 	weapon_cooldown_timer:    f32,
 	max_weapon_cooldown_time: f32,
+	xp:                       int,
+	next_level_xp:            int,
+	xp_pickup_radius:         f32,
 }
 
 
 Enemy :: struct {
 	using entity: Entity,
 	type:         EnemyType,
+}
+
+
+Camera :: struct {
+	position: Vector2,
 }
 
 SPRITE_PIXEL_SIZE :: 16
@@ -71,6 +80,7 @@ WALK_ANIMATION_FRAMES :: 6
 ROLLING_ANIMATION_TIME :: 0.08
 ROLLING_ANIMATION_FRAMES :: 4
 PLAYER_INITIAL_FIRE_RATE :: 0.2
+PLAYER_INITIAL_PICKUP_RADIUS :: 8
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -81,6 +91,9 @@ DEFAULT_ENT :: Entity {
 	max_roll_stamina         = INITAL_ROLL_STAMINIA,
 	max_weapon_cooldown_time = PLAYER_INITIAL_FIRE_RATE,
 	health                   = 2,
+	max_health               = 2.,
+	next_level_xp            = 100,
+	xp_pickup_radius         = PLAYER_INITIAL_PICKUP_RADIUS,
 }
 
 Particle :: struct {
@@ -103,15 +116,22 @@ Projectile :: struct {
 	damage_to_deal:            int,
 }
 
+XpPickup :: struct {
+	position: Vector2,
+	active:   bool,
+}
 
 GameRunState :: struct {
-	enemies:     [dynamic]Enemy,
-	projectiles: [dynamic]Projectile,
-	particles:   [dynamic]Particle,
-	player:      Entity,
+	enemies:           [dynamic]Enemy,
+	projectiles:       [dynamic]Projectile,
+	particles:         [dynamic]Particle,
+	player:            Entity,
+	xp_pickups:        [dynamic]XpPickup,
+	enemy_spawn_timer: f32,
 }
 
 game_run_state: GameRunState
+camera: Camera
 draw_hitboxes := true
 
 init :: proc "c" () {
@@ -128,7 +148,6 @@ init :: proc "c" () {
 	init_images()
 
 	game_run_state.player = DEFAULT_ENT
-	generate_level()
 }
 
 
@@ -262,24 +281,6 @@ create_crawler :: proc(position: Vector2) -> Enemy {
 	return enemy
 }
 
-room_size: Vector2 : {80, 60}
-generate_level :: proc() {
-	number_of_enemies: int = auto_cast rand.float32_range(10, 20)
-	for i := 0; i < number_of_enemies; i += 1 {
-		enemy_type: EnemyType = auto_cast rand.int31_max(len(EnemyType))
-		position: Vector2 = {
-			rand.float32_range(-room_size.x, room_size.x),
-			rand.float32_range(-room_size.y, room_size.y),
-		}
-		switch (enemy_type) {
-		case .BAT:
-			append(&game_run_state.enemies, create_bat(position))
-		case .CRAWLER:
-			append(&game_run_state.enemies, create_crawler(position))
-		}
-	}
-}
-
 spawn_projectile_particle :: proc(p: Projectile, sprite_cell_start_y: int) {
 	particle: Particle
 
@@ -292,11 +293,92 @@ spawn_projectile_particle :: proc(p: Projectile, sprite_cell_start_y: int) {
 }
 
 
+draw_status_bar :: proc(
+	position: Vector2,
+	color: Vector4,
+	value: f32,
+	max_value: f32,
+	width: f32 = 15,
+	height: f32 = 1.5,
+	border_width: f32 = 0.5,
+) {
+	xform := translate_mat4(extend(position + {-width * 0.5, 0.0}))
+
+	draw_quad_xform(xform, {width, height}, .nil, DEFAULT_UV, {1, 1, 1, 1})
+	xform = xform * linalg.matrix4_translate_f32({border_width * 0.5, border_width * 0.5, 0.0})
+	width_percentage := value / max_value
+	draw_quad_xform(
+		xform,
+		{(width - border_width) * width_percentage, height - border_width},
+		.nil,
+		DEFAULT_UV,
+		color,
+	)
+}
+
+
+ENEMY_SPAWN_TIMER_MIN :: 2
+ENEMY_SPAWN_TIMER_MAX :: 6
 frame :: proc "c" () {
 	context = runtime.default_context()
 
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
+	game_run_state.enemy_spawn_timer -= dt
 
+
+	if game_run_state.enemy_spawn_timer <= 0 {
+		game_run_state.enemy_spawn_timer = rand.float32_range(
+			ENEMY_SPAWN_TIMER_MIN,
+			ENEMY_SPAWN_TIMER_MAX,
+		)
+
+		amount_to_spawn: int = rand.int_max(4) + 1
+
+
+		for i := 0; i < amount_to_spawn; i += 1 {
+			enemy_type: EnemyType = auto_cast rand.int31_max(len(EnemyType))
+
+			spawn_x: f32 = 330
+			spawn_y: f32 = 180
+
+			position: Vector2 =
+				{
+					math.sign(rand.float32_range(-1, 1)) * spawn_x,
+					math.sign(rand.float32_range(-1, 1)) * spawn_y,
+				} +
+				game_run_state.player.position
+			switch (enemy_type) {
+			case .BAT:
+				append(&game_run_state.enemies, create_bat(position))
+			case .CRAWLER:
+				append(&game_run_state.enemies, create_crawler(position))
+			}
+		}
+	}
+
+	if game_run_state.player.active {
+
+
+		dist := linalg.distance(mouse_world_position, game_run_state.player.position)
+
+		direction := mouse_world_position - game_run_state.player.position
+
+		max_distance: f32 = 25
+		clamped_dist := math.min(dist, max_distance)
+
+
+		if direction.x != 0 && direction.y != 0 {
+			camera.position = linalg.lerp(
+				camera.position,
+				game_run_state.player.position + linalg.normalize(direction) * clamped_dist,
+				dt,
+			)
+		}
+
+
+	}
+
+	draw_frame.camera_xform = translate_mat4(Vector3{-camera.position.x, -camera.position.y, 0})
 
 	{
 		// MOUSE TO WORLD
@@ -311,12 +393,74 @@ frame :: proc "c" () {
 
 		// Transform to world coordinates
 		world_pos: Vector4 = {ndc_x, ndc_y, 0, 1}
-		world_pos = m4_transform(m4_inverse(proj), world_pos)
-		world_pos = m4_transform(view, world_pos)
+		world_pos = linalg.inverse(proj * view) * world_pos
+		// world_pos = view * world_pos
 
 		mouse_world_position = world_pos.xy
 	}
 
+
+	{
+		tiles_x: f32 = 22
+		tiles_y: f32 = 15
+
+		// Calculate the camera's current offset
+		camera_offset_x := math.floor(camera.position.x / 16)
+		camera_offset_y := math.floor(camera.position.y / 16)
+		offset := tiles_x * 8.0 + tiles_y * 8.0
+		// render tiles
+		for x: int = auto_cast camera_offset_x; x < auto_cast (tiles_x + camera_offset_x); x += 1 {
+			for y: int = auto_cast camera_offset_y;
+			    y < auto_cast (tiles_y + camera_offset_y);
+			    y += 1 {
+				// Calculate tile world position
+				tile_pos := Vector3 {
+					auto_cast x * 16.0 - tiles_x * 8.0,
+					auto_cast y * 16.0 - tiles_y * 8.0,
+					0.0,
+				}
+
+				// Offset tile position by camera movement (player position)
+				world_pos := tile_pos
+				xform := translate_mat4(world_pos)
+
+				uv := get_frame_uvs(.tiles, {0, 0}, {16, 16})
+				color := Vector4{0.89, 0.7, 0.3, 1.0}
+
+				if (x + y) % 2 == 0 {
+					color = Vector4{0.88, 0.67, 0.32, 1.0}
+				}
+				draw_quad_xform(xform, {16, 16}, .nil, DEFAULT_UV, color)
+			}
+		}
+	}
+
+	{
+		// XP pickups
+		for &xp in &game_run_state.xp_pickups {
+			if circles_overlap(
+				xp.position,
+				4,
+				game_run_state.player.position,
+				game_run_state.player.xp_pickup_radius,
+			) {
+				xp.active = false
+				game_run_state.player.xp += 1
+			}
+
+			xform := translate_mat4({xp.position.x, xp.position.y, 0.0})
+			draw_quad_center_xform(xform, {4, 4}, .nil, DEFAULT_UV, {0.0, 0.0, 1.0, 1.0})
+		}
+
+		// clean up enemies
+		for i := len(game_run_state.xp_pickups) - 1; i >= 0; i -= 1 {
+			xp := &game_run_state.xp_pickups[i]
+			if !xp.active {
+				ordered_remove(&game_run_state.xp_pickups, i)
+			}
+		}
+
+	}
 
 	{
 		using sapp.Keycode
@@ -431,17 +575,19 @@ frame :: proc "c" () {
 			linalg.matrix4_translate_f32({-5, -12, 0.0})
 		weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
 		draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
+		draw_status_bar(
+			game_run_state.player.position + {0.0, -12},
+			{1, 0, 0, 1},
+			auto_cast game_run_state.player.health,
+			auto_cast game_run_state.player.max_health,
+		)
 
-		xform =
-			linalg.matrix4_translate_f32(
-				{game_run_state.player.position.x, game_run_state.player.position.y, 0.0},
-			) *
-			linalg.matrix4_translate_f32({-15 * 0.5, -12, 0.0})
-
-		draw_quad_xform(xform, {15, 1.5}, .nil, DEFAULT_UV, {1, 1, 1, 1})
-		xform = xform * linalg.matrix4_translate_f32({0.25, 0.25, 0.0})
-		width_percentage := player.roll_stamina / player.max_roll_stamina
-		draw_quad_xform(xform, {14.5 * width_percentage, 1}, .nil, DEFAULT_UV, {0, 0, 1, 1})
+		draw_status_bar(
+			game_run_state.player.position + {0.0, -14},
+			{0, 0, 1, 1},
+			player.roll_stamina,
+			player.max_roll_stamina,
+		)
 	}
 
 
@@ -449,6 +595,7 @@ frame :: proc "c" () {
 		// @enemies
 		for &enemy in game_run_state.enemies {
 			if enemy.health <= 0 {
+				append(&game_run_state.xp_pickups, XpPickup{enemy.position, true})
 				continue
 			}
 
@@ -475,6 +622,16 @@ frame :: proc "c" () {
 
 			uvs := get_frame_uvs(.enemies, {0, sprite_y_index}, {16, 16})
 			draw_quad_center_xform(xform, {16, 16}, .enemies, uvs)
+
+			if enemy.health != enemy.max_health {
+				draw_status_bar(
+					enemy.position + {0.0, 12},
+					{1, 0, 0, 1},
+					auto_cast enemy.health,
+					auto_cast enemy.max_health,
+				)
+			}
+
 		}
 
 
@@ -596,6 +753,25 @@ frame :: proc "c" () {
 				{0, 0, 1, alpha},
 			)
 		}
+	}
+
+
+	draw_frame.camera_xform = identity()
+
+
+	{
+		// XP bar
+		half_height := pixel_height / 2.0
+
+		draw_status_bar(
+			{0.0, half_height - 10},
+			Vector4{0.0, 0.0, 1.0, 1.0},
+			auto_cast game_run_state.player.xp,
+			auto_cast game_run_state.player.next_level_xp,
+			100,
+			5,
+			1,
+		)
 	}
 
 

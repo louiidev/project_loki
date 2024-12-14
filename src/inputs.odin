@@ -22,7 +22,7 @@ event_cb :: proc "c" (event: ^sapp.Event) {
 	inputs.screen_mouse_pos.x = event.mouse_x
 	inputs.screen_mouse_pos.y = auto_cast (sapp.height() - auto_cast event.mouse_y)
 	// inputs.mouse_pos.x = event->mouse_x - graphics->viewport_pos.x
-	// inputs.mouse_pos.y = event->mouse_y - graphics->viewport_pos.y
+	// inputs.mouse_pos.x = event->mouse_x - graphics->viewport_pos.x
 
 	using sapp.Event_Type
 	#partial switch event.type {
