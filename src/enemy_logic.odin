@@ -56,13 +56,22 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
 	}
 
 	if can_move_y {
-
 		entity.position.y = y
 	}
 }
 
 crawler_update_logic :: proc(entity: ^Entity, dt: f32) {
 	move_entity_towards_player(entity, dt)
+
+
+	if circles_overlap(
+		entity.position,
+		entity.collision_radius,
+		game_run_state.player.position,
+		4,
+	) {
+		damage_player(1)
+	}
 }
 
 

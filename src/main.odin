@@ -52,6 +52,7 @@ Entity :: struct {
 	xp:                       int,
 	next_level_xp:            int,
 	xp_pickup_radius:         f32,
+	i_frame_timer:            f32,
 }
 
 
@@ -81,6 +82,7 @@ ROLLING_ANIMATION_TIME :: 0.08
 ROLLING_ANIMATION_FRAMES :: 4
 PLAYER_INITIAL_FIRE_RATE :: 0.2
 PLAYER_INITIAL_PICKUP_RADIUS :: 8
+PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -196,6 +198,18 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 }
 
 
+damage_player :: proc(damage_amount: int) {
+	using game_run_state
+	if player.i_frame_timer <= 0 {
+		player.health -= damage_amount
+		player.i_frame_timer = PLAYER_I_FRAME_TIMEOUT_AMOUNT
+
+		if player.health <= 0 {
+			player.active = false
+		}
+	}
+}
+
 knockback_ent :: proc(ent: ^Entity, direction: Vector2) {
 	if (ent.knockback_timer > 0) {
 		return
@@ -256,6 +270,7 @@ update_entity_timers :: proc(ent: ^Entity, dt: f32) {
 	ent.knockback_timer = math.max(0.0, ent.knockback_timer - dt)
 	ent.stun_timer = math.max(0.0, ent.stun_timer - dt)
 	ent.weapon_cooldown_timer = math.max(0.0, ent.weapon_cooldown_timer - dt)
+	ent.i_frame_timer = math.max(0.0, ent.i_frame_timer - dt)
 	ent.current_animation_timer += dt
 }
 
@@ -424,9 +439,7 @@ frame :: proc "c" () {
 				world_pos := tile_pos
 				xform := translate_mat4(world_pos)
 
-				uv := get_frame_uvs(.tiles, {0, 0}, {16, 16})
 				color := Vector4{0.89, 0.7, 0.3, 1.0}
-
 				if (x + y) % 2 == 0 {
 					color = Vector4{0.88, 0.67, 0.32, 1.0}
 				}
@@ -667,8 +680,6 @@ frame :: proc "c" () {
 				p.current_animation_time = 0
 			}
 
-			center_pos :=
-				game_run_state.player.position + {SPRITE_PIXEL_SIZE * 0.5, SPRITE_PIXEL_SIZE * 0.5}
 
 			if p.player_owned {
 				for &e in game_run_state.enemies {
@@ -676,8 +687,7 @@ frame :: proc "c" () {
 						continue
 					}
 
-					center_position := e.position
-					if (circles_overlap(p.position, 6, center_position, 6)) {
+					if (circles_overlap(p.position, 6, e.position, 6)) {
 						knockback_ent(&e, linalg.normalize(p.velocity))
 						p.active = false
 						e.health -= p.damage_to_deal
@@ -690,12 +700,15 @@ frame :: proc "c" () {
 					}
 				}
 			} else if (circles_overlap(
-					   center_pos,
+					   p.position,
 					   game_run_state.player.collision_radius,
 					   p.position,
 					   4,
 				   )) {
 				// PLAYER dmg
+
+				p.active = false
+				damage_player(1)
 			}
 
 			xform :=
