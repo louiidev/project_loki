@@ -14,6 +14,8 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
+import "core:strconv"
+import "core:strings"
 import t "core:time"
 
 
@@ -49,10 +51,22 @@ Entity :: struct {
 	animation_state:          AnimationState,
 	weapon_cooldown_timer:    f32,
 	max_weapon_cooldown_time: f32,
-	xp:                       int,
-	next_level_xp:            int,
 	xp_pickup_radius:         f32,
 	i_frame_timer:            f32,
+	max_bullets:              int,
+	current_bullets_count:    int,
+	reload_timer:             f32,
+	time_to_reload:           f32,
+}
+
+
+Upgrade :: enum {
+	PIERCING_SHOT,
+	FORK_SHOT,
+	RELOAD_SPEED,
+	ROLL_SPEED,
+	ROLL_STAMINIA,
+	HEALTH,
 }
 
 
@@ -83,6 +97,10 @@ ROLLING_ANIMATION_FRAMES :: 4
 PLAYER_INITIAL_FIRE_RATE :: 0.2
 PLAYER_INITIAL_PICKUP_RADIUS :: 8
 PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
+PLAYER_INITIAL_BULLETS :: 6
+PLAYER_INITIAL_RELOAD_TIME :: 1.0
+INITIAL_NXT_LEVEL_XP_AMOUNT :: 3
+UPGRADE_TIMER_SHOW_TIME :: 0.9
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -94,8 +112,10 @@ DEFAULT_ENT :: Entity {
 	max_weapon_cooldown_time = PLAYER_INITIAL_FIRE_RATE,
 	health                   = 2,
 	max_health               = 2.,
-	next_level_xp            = 100,
 	xp_pickup_radius         = PLAYER_INITIAL_PICKUP_RADIUS,
+	max_bullets              = PLAYER_INITIAL_BULLETS,
+	current_bullets_count    = PLAYER_INITIAL_BULLETS,
+	time_to_reload           = PLAYER_INITIAL_RELOAD_TIME,
 }
 
 Particle :: struct {
@@ -124,17 +144,27 @@ XpPickup :: struct {
 }
 
 GameRunState :: struct {
-	enemies:           [dynamic]Enemy,
-	projectiles:       [dynamic]Projectile,
-	particles:         [dynamic]Particle,
-	player:            Entity,
-	xp_pickups:        [dynamic]XpPickup,
-	enemy_spawn_timer: f32,
+	enemies:               [dynamic]Enemy,
+	projectiles:           [dynamic]Projectile,
+	particles:             [dynamic]Particle,
+	player:                Entity,
+	xp_pickups:            [dynamic]XpPickup,
+	enemy_spawn_timer:     f32,
+	current_xp:            int,
+	to_next_level_xp:      int,
+
+	// upgrades
+	slowdown_multiplier:   f32,
+	timer_to_show_upgrade: f32,
+	show_upgrade_ui:       bool,
+	upgrades:              [3]Upgrade,
+	player_upgrade:        [Upgrade]int,
 }
 
 game_run_state: GameRunState
+
 camera: Camera
-draw_hitboxes := true
+draw_hitboxes := false
 
 init :: proc "c" () {
 	context = runtime.default_context()
@@ -150,10 +180,12 @@ init :: proc "c" () {
 	init_images()
 
 	game_run_state.player = DEFAULT_ENT
+	game_run_state.to_next_level_xp = INITIAL_NXT_LEVEL_XP_AMOUNT
 }
 
 
 paused := false
+can_player_move := true
 last_time: u64 = 0
 mouse_world_position: Vector2
 
@@ -271,6 +303,7 @@ update_entity_timers :: proc(ent: ^Entity, dt: f32) {
 	ent.stun_timer = math.max(0.0, ent.stun_timer - dt)
 	ent.weapon_cooldown_timer = math.max(0.0, ent.weapon_cooldown_timer - dt)
 	ent.i_frame_timer = math.max(0.0, ent.i_frame_timer - dt)
+	ent.reload_timer = math.max(0.0, ent.reload_timer - dt)
 	ent.current_animation_timer += dt
 }
 
@@ -307,6 +340,24 @@ spawn_projectile_particle :: proc(p: Projectile, sprite_cell_start_y: int) {
 	append(&game_run_state.particles, particle)
 }
 
+mouse_to_matrix :: proc() -> Vector2 {
+	// MOUSE TO WORLD
+	mouse_x := inputs.screen_mouse_pos.x
+	mouse_y := inputs.screen_mouse_pos.y
+	proj := draw_frame.projection
+	view := draw_frame.camera_xform
+
+	// Normalize the mouse coordinates
+	ndc_x := (mouse_x / (auto_cast sapp.width() * 0.5)) - 1.0
+	ndc_y := (mouse_y / (auto_cast sapp.height() * 0.5)) - 1.0
+
+	// Transform to world coordinates
+	world_pos: Vector4 = {ndc_x, ndc_y, 0, 1}
+	world_pos = linalg.inverse(proj * view) * world_pos
+	// world_pos = view * world_pos
+	return world_pos.xy
+}
+
 
 draw_status_bar :: proc(
 	position: Vector2,
@@ -324,13 +375,22 @@ draw_status_bar :: proc(
 	width_percentage := value / max_value
 	draw_quad_xform(
 		xform,
+		{(width - border_width), height - border_width},
+		.nil,
+		DEFAULT_UV,
+		{0.0, 0.0, 0.0, 0.3},
+	)
+	draw_quad_xform(
+		xform,
 		{(width - border_width) * width_percentage, height - border_width},
 		.nil,
 		DEFAULT_UV,
 		color,
 	)
 }
-
+round_to_half :: proc(value: f32) -> f32 {
+	return math.round(value * 2) / 2
+}
 
 ENEMY_SPAWN_TIMER_MIN :: 2
 ENEMY_SPAWN_TIMER_MAX :: 6
@@ -338,8 +398,40 @@ frame :: proc "c" () {
 	context = runtime.default_context()
 
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
-	game_run_state.enemy_spawn_timer -= dt
+	ui_dt: f32 = dt
 
+	if game_run_state.current_xp >= game_run_state.to_next_level_xp {
+		if game_run_state.show_upgrade_ui {
+			game_run_state.current_xp = 0.0
+			game_run_state.to_next_level_xp += 5
+		} else {
+			if game_run_state.timer_to_show_upgrade <= 0 {
+				game_run_state.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
+			} else {
+				game_run_state.timer_to_show_upgrade = math.max(
+					game_run_state.timer_to_show_upgrade - dt,
+					0.0,
+				)
+				if game_run_state.timer_to_show_upgrade == 0 {
+					game_run_state.show_upgrade_ui = true
+
+				}
+			}
+
+			dt = math.lerp(
+				dt,
+				0.0,
+				1 - game_run_state.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME,
+			)
+		}
+	}
+
+
+	if game_run_state.show_upgrade_ui {
+		dt = 0.0
+	}
+
+	game_run_state.enemy_spawn_timer -= dt
 
 	if game_run_state.enemy_spawn_timer <= 0 {
 		game_run_state.enemy_spawn_timer = rand.float32_range(
@@ -353,8 +445,8 @@ frame :: proc "c" () {
 		for i := 0; i < amount_to_spawn; i += 1 {
 			enemy_type: EnemyType = auto_cast rand.int31_max(len(EnemyType))
 
-			spawn_x: f32 = 330
-			spawn_y: f32 = 180
+			spawn_x: f32 = 330 * 0.5
+			spawn_y: f32 = 200 * 0.5
 
 			position: Vector2 =
 				{
@@ -371,7 +463,7 @@ frame :: proc "c" () {
 		}
 	}
 
-	if game_run_state.player.active {
+	if game_run_state.player.active && can_player_move {
 
 
 		dist := linalg.distance(mouse_world_position, game_run_state.player.position)
@@ -383,11 +475,15 @@ frame :: proc "c" () {
 
 
 		if direction.x != 0 && direction.y != 0 {
+			// we will make the camera better later on
 			camera.position = linalg.lerp(
 				camera.position,
 				game_run_state.player.position + linalg.normalize(direction) * clamped_dist,
-				dt,
+				dt * 4,
 			)
+
+			// camera.position = {round_to_half(camera.position.x), round_to_half(camera.position.y)}
+
 		}
 
 
@@ -395,24 +491,26 @@ frame :: proc "c" () {
 
 	draw_frame.camera_xform = translate_mat4(Vector3{-camera.position.x, -camera.position.y, 0})
 
-	{
-		// MOUSE TO WORLD
-		mouse_x := inputs.screen_mouse_pos.x
-		mouse_y := inputs.screen_mouse_pos.y
-		proj := draw_frame.projection
-		view := draw_frame.camera_xform
+	// {
+	// 	// MOUSE TO WORLD
+	// 	mouse_x := inputs.screen_mouse_pos.x
+	// 	mouse_y := inputs.screen_mouse_pos.y
+	// 	proj := draw_frame.projection
+	// 	view := draw_frame.camera_xform
 
-		// Normalize the mouse coordinates
-		ndc_x := (mouse_x / (auto_cast sapp.width() * 0.5)) - 1.0
-		ndc_y := (mouse_y / (auto_cast sapp.height() * 0.5)) - 1.0
+	// 	// Normalize the mouse coordinates
+	// 	ndc_x := (mouse_x / (auto_cast sapp.width() * 0.5)) - 1.0
+	// 	ndc_y := (mouse_y / (auto_cast sapp.height() * 0.5)) - 1.0
 
-		// Transform to world coordinates
-		world_pos: Vector4 = {ndc_x, ndc_y, 0, 1}
-		world_pos = linalg.inverse(proj * view) * world_pos
-		// world_pos = view * world_pos
+	// 	// Transform to world coordinates
+	// 	world_pos: Vector4 = {ndc_x, ndc_y, 0, 1}
+	// 	world_pos = linalg.inverse(proj * view) * world_pos
+	// 	// world_pos = view * world_pos
 
-		mouse_world_position = world_pos.xy
-	}
+	// 	mouse_world_position = world_pos.xy
+	// }
+
+	mouse_world_position = mouse_to_matrix()
 
 
 	{
@@ -448,7 +546,7 @@ frame :: proc "c" () {
 		}
 	}
 
-	{
+	if game_run_state.current_xp < game_run_state.to_next_level_xp {
 		// XP pickups
 		for &xp in &game_run_state.xp_pickups {
 			if circles_overlap(
@@ -458,7 +556,7 @@ frame :: proc "c" () {
 				game_run_state.player.xp_pickup_radius,
 			) {
 				xp.active = false
-				game_run_state.player.xp += 1
+				game_run_state.current_xp += 1
 			}
 
 			xform := translate_mat4({xp.position.x, xp.position.y, 0.0})
@@ -480,83 +578,101 @@ frame :: proc "c" () {
 		using sapp
 		// PLAYER LOGIC
 		using game_run_state
-		x := f32(int(inputs.button_down[D]) - int(inputs.button_down[A]))
-		y := f32(int(inputs.button_down[W]) - int(inputs.button_down[S]))
-		player_input: Vector2 = {x, y}
-		if x != 0 && y != 0 {
-			player_input = linalg.normalize(player_input)
-		}
 
-		if x != 0 || y != 0 {
-			if player.animation_state != .ROLLING {
-				player.animation_state = .WALKING
+
+		if can_player_move {
+			x := f32(int(inputs.button_down[D]) - int(inputs.button_down[A]))
+			y := f32(int(inputs.button_down[W]) - int(inputs.button_down[S]))
+			player_input: Vector2 = {x, y}
+			if x != 0 && y != 0 {
+				player_input = linalg.normalize(player_input)
 			}
-		} else {
-			set_ent_animation_state(&player, .IDLE)
-		}
 
-		update_entity_timers(&player, dt)
-		update_player_animations(&player, dt)
-
-
-		speed := player.speed
-
-		if inputs.button_just_pressed[Keycode.SPACE] {
-			if player.roll_stamina > 0 && player.animation_state != .ROLLING {
-				set_ent_animation_state(&player, .ROLLING)
+			if x != 0 || y != 0 {
+				if player.animation_state != .ROLLING {
+					player.animation_state = .WALKING
+				}
 			} else {
-				set_ent_animation_state(&player, .WALKING)
+				set_ent_animation_state(&player, .IDLE)
 			}
-		}
 
-		if player.animation_state == .ROLLING {
-			player.roll_stamina -= dt
-			speed = player.roll_speed
+			update_entity_timers(&player, dt)
+			update_player_animations(&player, dt)
 
-			if player.roll_stamina <= 0 {
-				player.roll_stamina = 0
-				set_ent_animation_state(&player, .WALKING)
+
+			speed := player.speed
+
+			if inputs.button_just_pressed[Keycode.SPACE] {
+				if player.roll_stamina > 0 && player.animation_state != .ROLLING {
+					set_ent_animation_state(&player, .ROLLING)
+				} else {
+					set_ent_animation_state(&player, .WALKING)
+				}
 			}
-		} else {
-			player.roll_stamina = math.min(player.roll_stamina + dt, player.max_roll_stamina)
-		}
 
-
-		rotation_z := -calc_rotation_to_target(mouse_world_position, player.position)
-		attack_direction: Vector2 = {math.cos(-rotation_z), math.sin(-rotation_z)}
-		gun_move_distance: f32 = 8.0
-		delta_x := gun_move_distance * math.cos(rotation_z)
-		delta_y := gun_move_distance * math.sin(rotation_z)
-		attack_position: Vector2 = player.position + {delta_x, -delta_y}
-		player_center_position := player.position + {-8, -8}
-
-		if inputs.mouse_down[Mousebutton.LEFT] {
-			speed = player.speed_while_shooting
-
-		}
-
-		if inputs.mouse_down[Mousebutton.LEFT] && player.weapon_cooldown_timer <= 0 {
-
-
-			projectile: Projectile
-			projectile.animation_count = 2
-			projectile.time_per_frame = 0.02
-			projectile.position = attack_position
-			projectile.active = true
-			projectile.distance_limit = 250
-			projectile.sprite_cell_start = {0, 1}
-			projectile.rotation = -rotation_z
-			projectile.velocity = attack_direction * 100
-			projectile.player_owned = true
-			projectile.damage_to_deal = 1
-			append(&game_run_state.projectiles, projectile)
 			if player.animation_state == .ROLLING {
-				set_ent_animation_state(&player, .WALKING)
+				player.roll_stamina -= dt
+				speed = player.roll_speed
+
+				if player.roll_stamina <= 0 {
+					player.roll_stamina = 0
+					set_ent_animation_state(&player, .WALKING)
+				}
+			} else {
+				player.roll_stamina = math.min(player.roll_stamina + dt, player.max_roll_stamina)
 			}
 
-			player.weapon_cooldown_timer = player.max_weapon_cooldown_time
+
+			rotation_z := -calc_rotation_to_target(mouse_world_position, player.position)
+			attack_direction: Vector2 = {math.cos(-rotation_z), math.sin(-rotation_z)}
+			gun_move_distance: f32 = 8.0
+			delta_x := gun_move_distance * math.cos(rotation_z)
+			delta_y := gun_move_distance * math.sin(rotation_z)
+			attack_position: Vector2 = player.position + {delta_x, -delta_y}
+			player_center_position := player.position + {-8, -8}
+
+			if inputs.mouse_down[Mousebutton.LEFT] || player.weapon_cooldown_timer > 0 {
+				speed = player.speed_while_shooting
+			}
+
+			if player.current_bullets_count == 0 {
+				if player.reload_timer <= 0 {
+					player.current_bullets_count = player.max_bullets
+				}
+			}
+
+			if inputs.mouse_down[Mousebutton.LEFT] &&
+			   player.weapon_cooldown_timer <= 0 &&
+			   player.current_bullets_count > 0 &&
+			   player.reload_timer <= 0 {
+
+				player.current_bullets_count -= 1
+
+				if player.current_bullets_count <= 0 {
+					player.reload_timer = player.time_to_reload
+				}
+
+
+				projectile: Projectile
+				projectile.animation_count = 2
+				projectile.time_per_frame = 0.02
+				projectile.position = attack_position
+				projectile.active = true
+				projectile.distance_limit = 250
+				projectile.sprite_cell_start = {0, 1}
+				projectile.rotation = -rotation_z
+				projectile.velocity = attack_direction * 100
+				projectile.player_owned = true
+				projectile.damage_to_deal = 1
+				append(&game_run_state.projectiles, projectile)
+				if player.animation_state == .ROLLING {
+					set_ent_animation_state(&player, .WALKING)
+				}
+
+				player.weapon_cooldown_timer = player.max_weapon_cooldown_time
+			}
+			player.position += player_input * dt * speed
 		}
-		player.position += player_input * dt * speed
 
 		// RENDER PLAYER
 		xform := linalg.matrix4_translate_f32(
@@ -601,6 +717,48 @@ frame :: proc "c" () {
 			player.roll_stamina,
 			player.max_roll_stamina,
 		)
+
+		// line
+		draw_rect_bordered_center_xform(
+			translate_mat4(extend(game_run_state.player.position + {0.0, 14})),
+			{12, 0.5},
+			1,
+			COLOR_WHITE,
+			{0.1, 0.1, 0.1, 1},
+		)
+
+		// left
+		draw_rect_bordered_center_xform(
+			translate_mat4(extend(game_run_state.player.position + {-6.3, 14})),
+			{0.5, 2.5},
+			1,
+			COLOR_WHITE,
+			{0.1, 0.1, 0.1, 1},
+		)
+
+		// right
+		draw_rect_bordered_center_xform(
+			translate_mat4(extend(game_run_state.player.position + {6.3, 14})),
+			{0.5, 2.5},
+			1,
+			COLOR_WHITE,
+			{0.1, 0.1, 0.1, 1},
+		)
+
+		if player.current_bullets_count == 0 && player.reload_timer > 0 {
+			t_normalized := 1.0 - (player.reload_timer / player.time_to_reload)
+			min: f32 = -6.3
+			max: f32 = 6.3
+			x: f32 = math.lerp(min, max, t_normalized)
+
+			draw_rect_bordered_center_xform(
+				translate_mat4(extend(game_run_state.player.position + {x, 14})),
+				{0.5, 2.5},
+				1,
+				COLOR_WHITE,
+				{0.1, 0.1, 0.1, 1},
+			)
+		}
 	}
 
 
@@ -612,6 +770,8 @@ frame :: proc "c" () {
 				continue
 			}
 
+			flip_x := enemy.position.x > game_run_state.player.position.x
+
 			switch (enemy.type) {
 			case .CRAWLER:
 				crawler_update_logic(&enemy, dt)
@@ -622,6 +782,9 @@ frame :: proc "c" () {
 
 			// RENDER ENEMIES
 			xform := linalg.matrix4_translate_f32({enemy.position.x, enemy.position.y, 0.0})
+			if flip_x {
+				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
+			}
 			sprite_y_index := 0
 			switch (enemy.type) {
 			case .BAT:
@@ -667,7 +830,7 @@ frame :: proc "c" () {
 			p.position += distance_this_frame
 			p.current_distance_traveled += linalg.length(distance_this_frame)
 
-			if p.current_distance_traveled > p.distance_limit {
+			if p.current_distance_traveled > p.distance_limit || !p.active {
 				p.active = false
 				continue
 			}
@@ -702,7 +865,7 @@ frame :: proc "c" () {
 			} else if (circles_overlap(
 					   p.position,
 					   game_run_state.player.collision_radius,
-					   p.position,
+					   game_run_state.player.position,
 					   4,
 				   )) {
 				// PLAYER dmg
@@ -710,6 +873,7 @@ frame :: proc "c" () {
 				p.active = false
 				damage_player(1)
 			}
+
 
 			xform :=
 				linalg.matrix4_translate(Vector3{p.position.x, p.position.y, 0.0}) *
@@ -771,6 +935,7 @@ frame :: proc "c" () {
 
 	draw_frame.camera_xform = identity()
 
+	mouse_ui_pos := mouse_to_matrix()
 
 	{
 		// XP bar
@@ -779,8 +944,8 @@ frame :: proc "c" () {
 		draw_status_bar(
 			{0.0, half_height - 10},
 			Vector4{0.0, 0.0, 1.0, 1.0},
-			auto_cast game_run_state.player.xp,
-			auto_cast game_run_state.player.next_level_xp,
+			auto_cast game_run_state.current_xp,
+			auto_cast game_run_state.to_next_level_xp,
 			100,
 			5,
 			1,
@@ -788,10 +953,87 @@ frame :: proc "c" () {
 	}
 
 
+	{
+		using sapp
+		// UPGRADE MENU
+		if game_run_state.show_upgrade_ui {
+
+			box_width: f32 = 40
+			box_height: f32 = 60
+			padding: f32 = 10
+			xform := transform_2d({-box_width - padding, 0.0})
+			position: Vector2 = {-box_width - padding, 0.0}
+			for i := 0; i < len(game_run_state.upgrades); i += 1 {
+				color := COLOR_WHITE
+				if aabb_contains(position, {box_width, box_height}, mouse_ui_pos) {
+					color.rgb = 0.9
+
+					if inputs.mouse_just_pressed[Mousebutton.LEFT] {
+						game_run_state.show_upgrade_ui = false
+
+						game_run_state.player_upgrade[game_run_state.upgrades[i]] += 1
+						break
+					}
+				}
+				draw_rect_center_xform(xform, {box_width, box_height}, color)
+				heading := get_upgrade_heading(game_run_state.upgrades[i])
+
+				draw_text_center(
+					position - {0.0, -box_height * 0.5 + 6 + 1},
+					heading,
+					{0, 0, 0, 1},
+					6,
+				)
+
+				position += {box_width + padding, 0}
+				xform = xform * transform_2d({box_width + padding, 0.0})
+			}
+
+		}
+
+
+	}
+
+
+	{
+		// Base UI
+		set_ui_camera_projection()
+		using game_run_state
+
+		draw_text(
+			Vector2{10, 10},
+			fmt.tprintf("Ammo: %d/%d", player.current_bullets_count, player.max_bullets),
+			COLOR_WHITE,
+			32,
+		)
+		size := measure_text("Ammo", 32)
+		padding: f32 = 10
+		draw_text(
+			Vector2{10, 10 + size.y + padding},
+			fmt.tprintf("Health: %d/%d", player.health, player.max_health),
+			COLOR_WHITE,
+			32,
+		)
+		size = measure_text("Health", 32) + size + padding
+		draw_text(
+			Vector2{10, 10 + size.y + padding},
+			fmt.tprintf("Stamina: %.1f/%.1f", player.roll_stamina, player.max_roll_stamina),
+			COLOR_WHITE,
+			32,
+		)
+		size = measure_text("Stamina", 32) + size + padding
+		draw_text(
+			Vector2{10, 10 + size.y + padding},
+			fmt.tprintf("XP: %d/%d", game_run_state.current_xp, game_run_state.to_next_level_xp),
+			COLOR_WHITE,
+			32,
+		)
+	}
+
+
 	gfx_update()
 	inputs_end_frame()
 }
-
 
 cleanup :: proc "c" () {
 	context = runtime.default_context()

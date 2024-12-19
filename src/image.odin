@@ -16,6 +16,7 @@ ImageId :: enum {
 	projectiles,
 	weapons,
 	enemies,
+	font,
 }
 
 Image_Column_Rows_Count := [ImageId][2]int {
@@ -24,6 +25,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.projectiles = {3, 2},
 	.weapons     = {3, 1},
 	.enemies     = {4, 4},
+	.font        = {0, 0},
 }
 
 
@@ -33,7 +35,7 @@ Image :: struct {
 	atlas_x, atlas_y: int, // probs not useful
 	atlas_uvs:        Vector4,
 }
-images: [128]Image
+images: [ImageId]Image
 blank: []byte = {255, 255, 255, 255}
 
 init_images :: proc() {
@@ -49,7 +51,7 @@ init_images :: proc() {
 	}
 
 	for img_name, id in ImageId {
-		if id == 0 {continue}
+		if id == 0 || auto_cast id == ImageId.font {continue}
 
 		if id > highest_id {
 			highest_id = id
@@ -62,8 +64,12 @@ init_images :: proc() {
 			continue
 		}
 
-		images[id] = img
+		images[auto_cast id] = img
 	}
+
+
+	init_fonts()
+
 	pack_images_into_atlas()
 
 }
@@ -142,7 +148,7 @@ pack_images_into_atlas :: proc() {
 
 	// copy rect row-by-row into destination atlas
 	for rect in rects {
-		img := &images[rect.id]
+		img := &images[auto_cast rect.id]
 
 		// copy row by row into atlas
 		for row in 0 ..< rect.h {
