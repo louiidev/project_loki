@@ -20,11 +20,11 @@ state: struct {
 }
 
 Vertex :: struct {
-	pos:       Vector2,
-	color:     Vector4,
-	uv:        Vector2,
-	tex_index: u8,
-	_:         u8,
+	pos:          Vector2,
+	color:        Vector4,
+	uv:           Vector2,
+	tex_index:    f32,
+	flash_amount: f32,
 }
 
 Quad :: [4]Vertex
@@ -126,7 +126,8 @@ gfx_init :: proc() {
 				ATTR_quad_position = {format = .FLOAT2},
 				ATTR_quad_color0 = {format = .FLOAT4},
 				ATTR_quad_uv0 = {format = .FLOAT2},
-				ATTR_quad_bytes0 = {format = .UBYTE4N},
+				ATTR_quad_tex_id = {format = .FLOAT},
+				ATTR_quad_flash_amount = {format = .FLOAT},
 			},
 		},
 	}
@@ -158,12 +159,14 @@ draw_quad_xform :: proc(
 	img_id: ImageId = .nil,
 	uv: Vector4 = DEFAULT_UV,
 	col: Vector4 = COLOR_WHITE,
+	flash_amount: f32 = 0,
 	texture_index: u8 = 0,
 ) {
 	draw_quad_xform_in_frame(
 		{size = size, uv = {uv.xy, uv.xw, uv.zw, uv.zy}, color = col, img_id = img_id},
 		xform,
 		&draw_frame,
+		flash_amount,
 		texture_index,
 	)
 }
@@ -201,12 +204,14 @@ draw_quad_center_xform :: proc(
 	img_id: ImageId = .nil,
 	uv: Vector4 = DEFAULT_UV,
 	col: Vector4 = COLOR_WHITE,
+	flash_amount: f32 = 0,
 ) {
 	xform := xform * linalg.matrix4_translate(Vector3{-size.x * 0.5, -size.y * 0.5, 0.0})
 	draw_quad_xform_in_frame(
 		{size = size, uv = {uv.xy, uv.xw, uv.zw, uv.zy}, color = col, img_id = img_id},
 		xform,
 		&draw_frame,
+		flash_amount,
 	)
 }
 
@@ -215,6 +220,7 @@ draw_quad_xform_in_frame :: proc(
 	quad: DrawQuad,
 	xform: Matrix4,
 	frame: ^DrawFrame,
+	flash_amount: f32 = 0,
 	texture_id: u8 = 0,
 ) {
 	if draw_frame.quad_count >= MAX_QUADS {
@@ -250,10 +256,14 @@ draw_quad_xform_in_frame :: proc(
 	verts[3].uv = uv0[3]
 
 
-	verts[0].tex_index = texture_id
-	verts[1].tex_index = texture_id
-	verts[2].tex_index = texture_id
-	verts[3].tex_index = texture_id
+	verts[0].tex_index = auto_cast texture_id
+	verts[1].tex_index = auto_cast texture_id
+	verts[2].tex_index = auto_cast texture_id
+	verts[3].tex_index = auto_cast texture_id
+	verts[0].flash_amount = flash_amount
+	verts[1].flash_amount = flash_amount
+	verts[2].flash_amount = flash_amount
+	verts[3].flash_amount = flash_amount
 
 
 }
@@ -450,7 +460,7 @@ draw_text :: proc(
 		xform :=
 			transform_2d(pos, 0, {auto_cast 1.0 * scale, auto_cast 1.0 * scale}) *
 			transform_2d(offset_to_render_at)
-		draw_quad_xform(xform, size, .nil, uv, col, 1)
+		draw_quad_xform(xform, size, .nil, uv, col, 0, 1)
 
 		x += advance_x
 		y += -advance_y

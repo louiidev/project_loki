@@ -170,7 +170,7 @@ GameRunState :: struct {
 }
 
 game_data: GameRunState
-app_state: AppState = .MainMenu
+app_state: AppState = .GamePlay
 
 camera: Camera
 draw_hitboxes := false
@@ -793,11 +793,19 @@ game_play :: proc() {
 				sprite_y_index = 1
 			}
 			update_entity_timers(&enemy, dt)
+
+			knockback_flash: f32 = 0
+			if enemy.knockback_timer > 0 {
+				knockback_flash = 1
+				fmt.println("TEST")
+			}
+
 			knockback_logic_update(&enemy, dt, ENEMY_KNOCKBACK_VELOCITY, &enemy.position)
 
 
 			uvs := get_frame_uvs(.enemies, {0, sprite_y_index}, {16, 16})
-			draw_quad_center_xform(xform, {16, 16}, .enemies, uvs)
+
+			draw_quad_center_xform(xform, {16, 16}, .enemies, uvs, COLOR_WHITE, knockback_flash)
 
 			if enemy.health != enemy.max_health {
 				draw_status_bar(
