@@ -5,7 +5,7 @@ import "core:math/linalg"
 
 
 move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
-	target_position := game_run_state.player.position
+	target_position := game_data.player.position
 	distance_from_target := linalg.distance(target_position, entity.position)
 	delta_x: f32 = target_position.x - entity.position.x
 	delta_y: f32 = target_position.x - entity.position.y
@@ -21,7 +21,7 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
 	can_move_y := true
 
 
-	for &enemy in game_run_state.enemies {
+	for &enemy in game_data.enemies {
 		if !enemy.active ||
 		   enemy.health <= 0 ||
 		   entity == &enemy ||
@@ -64,12 +64,7 @@ crawler_update_logic :: proc(entity: ^Entity, dt: f32) {
 	move_entity_towards_player(entity, dt)
 
 
-	if circles_overlap(
-		entity.position,
-		entity.collision_radius,
-		game_run_state.player.position,
-		4,
-	) {
+	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
 		damage_player(1)
 	}
 }
@@ -78,7 +73,7 @@ crawler_update_logic :: proc(entity: ^Entity, dt: f32) {
 BAT_FIRE_DIST :: 50
 
 bat_update_logic :: proc(entity: ^Entity, dt: f32) {
-	target_position := game_run_state.player.position
+	target_position := game_data.player.position
 	distance_from_target := linalg.distance(target_position, entity.position)
 
 	if distance_from_target > BAT_FIRE_DIST {
@@ -99,7 +94,7 @@ bat_update_logic :: proc(entity: ^Entity, dt: f32) {
 		projectile.velocity = attack_direction * 50
 		projectile.player_owned = false
 		projectile.damage_to_deal = 1
-		append(&game_run_state.projectiles, projectile)
+		append(&game_data.projectiles, projectile)
 		entity.weapon_cooldown_timer = 5
 	}
 }

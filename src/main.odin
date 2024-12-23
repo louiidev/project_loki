@@ -30,7 +30,9 @@ AnimationState :: enum {
 	ROLLING,
 }
 
+last_id: u32 = 0
 Entity :: struct {
+	id:                       u32,
 	position:                 Vector2,
 	speed:                    f32,
 	speed_while_shooting:     f32,
@@ -53,8 +55,6 @@ Entity :: struct {
 	max_weapon_cooldown_time: f32,
 	xp_pickup_radius:         f32,
 	i_frame_timer:            f32,
-	max_bullets:              int,
-	current_bullets_count:    int,
 	reload_timer:             f32,
 	time_to_reload:           f32,
 }
@@ -67,8 +67,14 @@ Upgrade :: enum {
 	ROLL_SPEED,
 	ROLL_STAMINIA,
 	HEALTH,
+	AMMO_UPGRADE,
 }
 
+
+AppState :: enum {
+	MainMenu,
+	GamePlay,
+}
 
 Enemy :: struct {
 	using entity: Entity,
@@ -113,8 +119,6 @@ DEFAULT_ENT :: Entity {
 	health                   = 2,
 	max_health               = 2.,
 	xp_pickup_radius         = PLAYER_INITIAL_PICKUP_RADIUS,
-	max_bullets              = PLAYER_INITIAL_BULLETS,
-	current_bullets_count    = PLAYER_INITIAL_BULLETS,
 	time_to_reload           = PLAYER_INITIAL_RELOAD_TIME,
 }
 
@@ -136,6 +140,8 @@ Projectile :: struct {
 	distance_limit:            f32,
 	current_distance_traveled: f32,
 	damage_to_deal:            int,
+	hits:                      int,
+	last_hit_ent_id:           u32,
 }
 
 XpPickup :: struct {
@@ -157,11 +163,14 @@ GameRunState :: struct {
 	slowdown_multiplier:   f32,
 	timer_to_show_upgrade: f32,
 	show_upgrade_ui:       bool,
-	upgrades:              [3]Upgrade,
+	next_upgrades:         [3]Upgrade,
 	player_upgrade:        [Upgrade]int,
+	max_bullets:           int,
+	current_bullets_count: int,
 }
 
-game_run_state: GameRunState
+game_data: GameRunState
+app_state: AppState = .MainMenu
 
 camera: Camera
 draw_hitboxes := false
@@ -179,8 +188,10 @@ init :: proc "c" () {
 	gfx_init()
 	init_images()
 
-	game_run_state.player = DEFAULT_ENT
-	game_run_state.to_next_level_xp = INITIAL_NXT_LEVEL_XP_AMOUNT
+	game_data.player = create_entity()
+	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
+	game_data.max_bullets = PLAYER_INITIAL_BULLETS
+	game_data.to_next_level_xp = INITIAL_NXT_LEVEL_XP_AMOUNT
 }
 
 
@@ -231,7 +242,7 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 
 
 damage_player :: proc(damage_amount: int) {
-	using game_run_state
+	using game_data
 	if player.i_frame_timer <= 0 {
 		player.health -= damage_amount
 		player.i_frame_timer = PLAYER_I_FRAME_TIMEOUT_AMOUNT
@@ -307,25 +318,33 @@ update_entity_timers :: proc(ent: ^Entity, dt: f32) {
 	ent.current_animation_timer += dt
 }
 
+create_entity :: proc(position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
+	entity := DEFAULT_ENT
+	last_id += 1
+	entity.id = last_id
+
+	return entity
+}
+
 
 create_bat :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = DEFAULT_ENT
+	enemy.entity = create_entity()
 	enemy.position = position
 	enemy.type = .BAT
 	enemy.speed = 20
 	enemy.weapon_cooldown_timer = 10
-
+	enemy.id = last_id
 	return enemy
 }
 
 create_crawler :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = DEFAULT_ENT
+	enemy.entity = create_entity()
 	enemy.position = position
 	enemy.type = .CRAWLER
 	enemy.speed = 20
-
+	enemy.id = last_id
 	return enemy
 }
 
@@ -337,7 +356,7 @@ spawn_projectile_particle :: proc(p: Projectile, sprite_cell_start_y: int) {
 	particle.animation_count = 4
 	particle.time_per_frame = 0.025
 	particle.rotation = p.rotation
-	append(&game_run_state.particles, particle)
+	append(&game_data.particles, particle)
 }
 
 mouse_to_matrix :: proc() -> Vector2 {
@@ -394,57 +413,56 @@ round_to_half :: proc(value: f32) -> f32 {
 
 ENEMY_SPAWN_TIMER_MIN :: 2
 ENEMY_SPAWN_TIMER_MAX :: 6
-frame :: proc "c" () {
-	context = runtime.default_context()
 
+
+GAMEPLAY_CLEAR_COLOR: sg.Color : {0.89, 0.7, 0.3, 1.0}
+game_play :: proc() {
+	clear_color = GAMEPLAY_CLEAR_COLOR
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
 	ui_dt: f32 = dt
 
-	if game_run_state.current_xp >= game_run_state.to_next_level_xp {
-		if game_run_state.show_upgrade_ui {
-			game_run_state.current_xp = 0.0
-			game_run_state.to_next_level_xp += 5
+	if game_data.current_xp >= game_data.to_next_level_xp {
+		if game_data.show_upgrade_ui {
+			game_data.current_xp = 0.0
+			game_data.to_next_level_xp += 5
 		} else {
-			if game_run_state.timer_to_show_upgrade <= 0 {
-				game_run_state.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
+			if game_data.timer_to_show_upgrade <= 0 {
+				game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
 			} else {
-				game_run_state.timer_to_show_upgrade = math.max(
-					game_run_state.timer_to_show_upgrade - dt,
+				game_data.timer_to_show_upgrade = math.max(
+					game_data.timer_to_show_upgrade - dt,
 					0.0,
 				)
-				if game_run_state.timer_to_show_upgrade == 0 {
-					game_run_state.show_upgrade_ui = true
-
+				if game_data.timer_to_show_upgrade == 0 {
+					game_data.show_upgrade_ui = true
+					for i := 0; i < len(game_data.next_upgrades); i += 1 {
+						game_data.next_upgrades[i] = auto_cast rand.int31_max(len(Upgrade))
+					}
 				}
 			}
 
-			dt = math.lerp(
-				dt,
-				0.0,
-				1 - game_run_state.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME,
-			)
+			dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
 		}
 	}
 
 
-	if game_run_state.show_upgrade_ui {
+	if game_data.show_upgrade_ui {
 		dt = 0.0
 	}
 
-	game_run_state.enemy_spawn_timer -= dt
+	game_data.enemy_spawn_timer -= dt
 
-	if game_run_state.enemy_spawn_timer <= 0 {
-		game_run_state.enemy_spawn_timer = rand.float32_range(
+	if game_data.enemy_spawn_timer <= 0 {
+		game_data.enemy_spawn_timer = rand.float32_range(
 			ENEMY_SPAWN_TIMER_MIN,
 			ENEMY_SPAWN_TIMER_MAX,
 		)
 
-		amount_to_spawn: int = rand.int_max(4) + 1
+		amount_to_spawn: int = rand.int_max(10) + 1
 
 
 		for i := 0; i < amount_to_spawn; i += 1 {
 			enemy_type: EnemyType = auto_cast rand.int31_max(len(EnemyType))
-
 			spawn_x: f32 = 330 * 0.5
 			spawn_y: f32 = 200 * 0.5
 
@@ -453,22 +471,22 @@ frame :: proc "c" () {
 					math.sign(rand.float32_range(-1, 1)) * spawn_x,
 					math.sign(rand.float32_range(-1, 1)) * spawn_y,
 				} +
-				game_run_state.player.position
+				game_data.player.position
 			switch (enemy_type) {
 			case .BAT:
-				append(&game_run_state.enemies, create_bat(position))
+				append(&game_data.enemies, create_bat(position))
 			case .CRAWLER:
-				append(&game_run_state.enemies, create_crawler(position))
+				append(&game_data.enemies, create_crawler(position))
 			}
 		}
 	}
 
-	if game_run_state.player.active && can_player_move {
+	if game_data.player.active && can_player_move {
 
 
-		dist := linalg.distance(mouse_world_position, game_run_state.player.position)
+		dist := linalg.distance(mouse_world_position, game_data.player.position)
 
-		direction := mouse_world_position - game_run_state.player.position
+		direction := mouse_world_position - game_data.player.position
 
 		max_distance: f32 = 25
 		clamped_dist := math.min(dist, max_distance)
@@ -478,7 +496,7 @@ frame :: proc "c" () {
 			// we will make the camera better later on
 			camera.position = linalg.lerp(
 				camera.position,
-				game_run_state.player.position + linalg.normalize(direction) * clamped_dist,
+				game_data.player.position + linalg.normalize(direction) * clamped_dist,
 				dt * 4,
 			)
 
@@ -491,24 +509,6 @@ frame :: proc "c" () {
 
 	draw_frame.camera_xform = translate_mat4(Vector3{-camera.position.x, -camera.position.y, 0})
 
-	// {
-	// 	// MOUSE TO WORLD
-	// 	mouse_x := inputs.screen_mouse_pos.x
-	// 	mouse_y := inputs.screen_mouse_pos.y
-	// 	proj := draw_frame.projection
-	// 	view := draw_frame.camera_xform
-
-	// 	// Normalize the mouse coordinates
-	// 	ndc_x := (mouse_x / (auto_cast sapp.width() * 0.5)) - 1.0
-	// 	ndc_y := (mouse_y / (auto_cast sapp.height() * 0.5)) - 1.0
-
-	// 	// Transform to world coordinates
-	// 	world_pos: Vector4 = {ndc_x, ndc_y, 0, 1}
-	// 	world_pos = linalg.inverse(proj * view) * world_pos
-	// 	// world_pos = view * world_pos
-
-	// 	mouse_world_position = world_pos.xy
-	// }
 
 	mouse_world_position = mouse_to_matrix()
 
@@ -546,17 +546,17 @@ frame :: proc "c" () {
 		}
 	}
 
-	if game_run_state.current_xp < game_run_state.to_next_level_xp {
+	if game_data.current_xp < game_data.to_next_level_xp {
 		// XP pickups
-		for &xp in &game_run_state.xp_pickups {
+		for &xp in &game_data.xp_pickups {
 			if circles_overlap(
 				xp.position,
 				4,
-				game_run_state.player.position,
-				game_run_state.player.xp_pickup_radius,
+				game_data.player.position,
+				game_data.player.xp_pickup_radius,
 			) {
 				xp.active = false
-				game_run_state.current_xp += 1
+				game_data.current_xp += 1
 			}
 
 			xform := translate_mat4({xp.position.x, xp.position.y, 0.0})
@@ -564,10 +564,10 @@ frame :: proc "c" () {
 		}
 
 		// clean up enemies
-		for i := len(game_run_state.xp_pickups) - 1; i >= 0; i -= 1 {
-			xp := &game_run_state.xp_pickups[i]
+		for i := len(game_data.xp_pickups) - 1; i >= 0; i -= 1 {
+			xp := &game_data.xp_pickups[i]
 			if !xp.active {
-				ordered_remove(&game_run_state.xp_pickups, i)
+				ordered_remove(&game_data.xp_pickups, i)
 			}
 		}
 
@@ -577,7 +577,7 @@ frame :: proc "c" () {
 		using sapp.Keycode
 		using sapp
 		// PLAYER LOGIC
-		using game_run_state
+		using game_data
 
 
 		if can_player_move {
@@ -635,20 +635,20 @@ frame :: proc "c" () {
 				speed = player.speed_while_shooting
 			}
 
-			if player.current_bullets_count == 0 {
+			if game_data.current_bullets_count == 0 {
 				if player.reload_timer <= 0 {
-					player.current_bullets_count = player.max_bullets
+					game_data.current_bullets_count = game_data.max_bullets
 				}
 			}
 
 			if inputs.mouse_down[Mousebutton.LEFT] &&
 			   player.weapon_cooldown_timer <= 0 &&
-			   player.current_bullets_count > 0 &&
+			   game_data.current_bullets_count > 0 &&
 			   player.reload_timer <= 0 {
 
-				player.current_bullets_count -= 1
+				game_data.current_bullets_count -= 1
 
-				if player.current_bullets_count <= 0 {
+				if game_data.current_bullets_count <= 0 {
 					player.reload_timer = player.time_to_reload
 				}
 
@@ -664,7 +664,7 @@ frame :: proc "c" () {
 				projectile.velocity = attack_direction * 100
 				projectile.player_owned = true
 				projectile.damage_to_deal = 1
-				append(&game_run_state.projectiles, projectile)
+				append(&game_data.projectiles, projectile)
 				if player.animation_state == .ROLLING {
 					set_ent_animation_state(&player, .WALKING)
 				}
@@ -676,7 +676,7 @@ frame :: proc "c" () {
 
 		// RENDER PLAYER
 		xform := linalg.matrix4_translate_f32(
-			{game_run_state.player.position.x, game_run_state.player.position.y, 0.0},
+			{game_data.player.position.x, game_data.player.position.y, 0.0},
 		)
 
 		frame_x := 0
@@ -698,21 +698,21 @@ frame :: proc "c" () {
 
 		xform =
 			linalg.matrix4_translate_f32(
-				{game_run_state.player.position.x, game_run_state.player.position.y, 0.0},
+				{game_data.player.position.x, game_data.player.position.y, 0.0},
 			) *
 			linalg.matrix4_rotate(weapon_rotation_angle, Vector3{0, 0, 1}) *
 			linalg.matrix4_translate_f32({-5, -12, 0.0})
 		weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
 		draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
 		draw_status_bar(
-			game_run_state.player.position + {0.0, -12},
+			game_data.player.position + {0.0, -12},
 			{1, 0, 0, 1},
-			auto_cast game_run_state.player.health,
-			auto_cast game_run_state.player.max_health,
+			auto_cast game_data.player.health,
+			auto_cast game_data.player.max_health,
 		)
 
 		draw_status_bar(
-			game_run_state.player.position + {0.0, -14},
+			game_data.player.position + {0.0, -14},
 			{0, 0, 1, 1},
 			player.roll_stamina,
 			player.max_roll_stamina,
@@ -720,7 +720,7 @@ frame :: proc "c" () {
 
 		// line
 		draw_rect_bordered_center_xform(
-			translate_mat4(extend(game_run_state.player.position + {0.0, 14})),
+			translate_mat4(extend(game_data.player.position + {0.0, 14})),
 			{12, 0.5},
 			1,
 			COLOR_WHITE,
@@ -729,7 +729,7 @@ frame :: proc "c" () {
 
 		// left
 		draw_rect_bordered_center_xform(
-			translate_mat4(extend(game_run_state.player.position + {-6.3, 14})),
+			translate_mat4(extend(game_data.player.position + {-6.3, 14})),
 			{0.5, 2.5},
 			1,
 			COLOR_WHITE,
@@ -738,21 +738,21 @@ frame :: proc "c" () {
 
 		// right
 		draw_rect_bordered_center_xform(
-			translate_mat4(extend(game_run_state.player.position + {6.3, 14})),
+			translate_mat4(extend(game_data.player.position + {6.3, 14})),
 			{0.5, 2.5},
 			1,
 			COLOR_WHITE,
 			{0.1, 0.1, 0.1, 1},
 		)
 
-		if player.current_bullets_count == 0 && player.reload_timer > 0 {
+		if game_data.current_bullets_count == 0 && player.reload_timer > 0 {
 			t_normalized := 1.0 - (player.reload_timer / player.time_to_reload)
 			min: f32 = -6.3
 			max: f32 = 6.3
 			x: f32 = math.lerp(min, max, t_normalized)
 
 			draw_rect_bordered_center_xform(
-				translate_mat4(extend(game_run_state.player.position + {x, 14})),
+				translate_mat4(extend(game_data.player.position + {x, 14})),
 				{0.5, 2.5},
 				1,
 				COLOR_WHITE,
@@ -764,13 +764,13 @@ frame :: proc "c" () {
 
 	{
 		// @enemies
-		for &enemy in game_run_state.enemies {
+		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
-				append(&game_run_state.xp_pickups, XpPickup{enemy.position, true})
+				append(&game_data.xp_pickups, XpPickup{enemy.position, true})
 				continue
 			}
 
-			flip_x := enemy.position.x > game_run_state.player.position.x
+			flip_x := enemy.position.x > game_data.player.position.x
 
 			switch (enemy.type) {
 			case .CRAWLER:
@@ -812,10 +812,10 @@ frame :: proc "c" () {
 
 
 		// clean up enemies
-		for i := len(game_run_state.enemies) - 1; i >= 0; i -= 1 {
-			enemy := &game_run_state.enemies[i]
+		for i := len(game_data.enemies) - 1; i >= 0; i -= 1 {
+			enemy := &game_data.enemies[i]
 			if enemy.health <= 0 {
-				ordered_remove(&game_run_state.enemies, i)
+				ordered_remove(&game_data.enemies, i)
 			}
 		}
 
@@ -825,7 +825,7 @@ frame :: proc "c" () {
 
 	{
 		// PROJECTILES
-		for &p in game_run_state.projectiles {
+		for &p in game_data.projectiles {
 			distance_this_frame := p.velocity * dt
 			p.position += distance_this_frame
 			p.current_distance_traveled += linalg.length(distance_this_frame)
@@ -845,27 +845,34 @@ frame :: proc "c" () {
 
 
 			if p.player_owned {
-				for &e in game_run_state.enemies {
+				for &e in game_data.enemies {
 					if (!e.active) {
 						continue
 					}
 
-					if (circles_overlap(p.position, 6, e.position, 6)) {
+					if (p.last_hit_ent_id != e.id &&
+						   circles_overlap(p.position, 6, e.position, 6)) {
 						knockback_ent(&e, linalg.normalize(p.velocity))
-						p.active = false
+						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
+							p.active = false
+							fmt.println(game_data.player_upgrade[Upgrade.PIERCING_SHOT])
+						} else {
+							p.hits += 1
+							p.last_hit_ent_id = e.id
+						}
 						e.health -= p.damage_to_deal
 						spawn_projectile_particle(p, 1)
-						game_run_state.player.roll_stamina = math.min(
-							game_run_state.player.roll_stamina + ROLL_STAMINIA_ADD_ON_SHOT,
-							game_run_state.player.max_roll_stamina,
+						game_data.player.roll_stamina = math.min(
+							game_data.player.roll_stamina + ROLL_STAMINIA_ADD_ON_SHOT,
+							game_data.player.max_roll_stamina,
 						)
 						break
 					}
 				}
 			} else if (circles_overlap(
 					   p.position,
-					   game_run_state.player.collision_radius,
-					   game_run_state.player.position,
+					   game_data.player.collision_radius,
+					   game_data.player.position,
 					   4,
 				   )) {
 				// PLAYER dmg
@@ -888,9 +895,9 @@ frame :: proc "c" () {
 		}
 
 
-		for p_i := len(game_run_state.projectiles) - 1; p_i >= 0; p_i -= 1 {
-			if (!game_run_state.projectiles[p_i].active) {
-				ordered_remove(&game_run_state.projectiles, p_i)
+		for p_i := len(game_data.projectiles) - 1; p_i >= 0; p_i -= 1 {
+			if (!game_data.projectiles[p_i].active) {
+				ordered_remove(&game_data.projectiles, p_i)
 			}
 		}
 
@@ -903,12 +910,12 @@ frame :: proc "c" () {
 		alpha: f32 = 0.2
 		if draw_hitboxes {
 
-			for e in game_run_state.enemies {
+			for e in game_data.enemies {
 				xform := linalg.matrix4_translate(Vector3{e.position.x, e.position.y, 0.0})
 				draw_quad_center_xform(xform, {12, 12}, .nil, DEFAULT_UV, {1, 0, 0, alpha})
 			}
 
-			for p in game_run_state.projectiles {
+			for p in game_data.projectiles {
 				xform :=
 					linalg.matrix4_translate(Vector3{p.position.x, p.position.y, 0.0}) *
 					linalg.matrix4_rotate(p.rotation, Vector3{0, 0, 1})
@@ -918,7 +925,7 @@ frame :: proc "c" () {
 
 
 			xform := linalg.matrix4_translate_f32(
-				{game_run_state.player.position.x, game_run_state.player.position.y, alpha},
+				{game_data.player.position.x, game_data.player.position.y, alpha},
 			)
 
 
@@ -944,8 +951,8 @@ frame :: proc "c" () {
 		draw_status_bar(
 			{0.0, half_height - 10},
 			Vector4{0.0, 0.0, 1.0, 1.0},
-			auto_cast game_run_state.current_xp,
-			auto_cast game_run_state.to_next_level_xp,
+			auto_cast game_data.current_xp,
+			auto_cast game_data.to_next_level_xp,
 			100,
 			5,
 			1,
@@ -956,27 +963,34 @@ frame :: proc "c" () {
 	{
 		using sapp
 		// UPGRADE MENU
-		if game_run_state.show_upgrade_ui {
+		if game_data.show_upgrade_ui {
 
 			box_width: f32 = 40
 			box_height: f32 = 60
 			padding: f32 = 10
 			xform := transform_2d({-box_width - padding, 0.0})
 			position: Vector2 = {-box_width - padding, 0.0}
-			for i := 0; i < len(game_run_state.upgrades); i += 1 {
+			for i := 0; i < len(game_data.next_upgrades); i += 1 {
 				color := COLOR_WHITE
 				if aabb_contains(position, {box_width, box_height}, mouse_ui_pos) {
 					color.rgb = 0.9
 
 					if inputs.mouse_just_pressed[Mousebutton.LEFT] {
-						game_run_state.show_upgrade_ui = false
+						game_data.show_upgrade_ui = false
 
-						game_run_state.player_upgrade[game_run_state.upgrades[i]] += 1
+						game_data.player_upgrade[game_data.next_upgrades[i]] += 1
+
+						#partial switch (game_data.next_upgrades[i]) {
+						case .AMMO_UPGRADE:
+							game_data.max_bullets += 2
+						}
+
+
 						break
 					}
 				}
 				draw_rect_center_xform(xform, {box_width, box_height}, color)
-				heading := get_upgrade_heading(game_run_state.upgrades[i])
+				heading := get_upgrade_heading(game_data.next_upgrades[i])
 
 				draw_text_center(
 					position - {0.0, -box_height * 0.5 + 6 + 1},
@@ -998,11 +1012,11 @@ frame :: proc "c" () {
 	{
 		// Base UI
 		set_ui_camera_projection()
-		using game_run_state
+		using game_data
 
 		draw_text(
 			Vector2{10, 10},
-			fmt.tprintf("Ammo: %d/%d", player.current_bullets_count, player.max_bullets),
+			fmt.tprintf("Ammo: %d/%d", game_data.current_bullets_count, game_data.max_bullets),
 			COLOR_WHITE,
 			32,
 		)
@@ -1024,15 +1038,73 @@ frame :: proc "c" () {
 		size = measure_text("Stamina", 32) + size + padding
 		draw_text(
 			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("XP: %d/%d", game_run_state.current_xp, game_run_state.to_next_level_xp),
+			fmt.tprintf("XP: %d/%d", game_data.current_xp, game_data.to_next_level_xp),
 			COLOR_WHITE,
 			32,
 		)
 	}
 
+}
+
+MAIN_MENU_CLEAR_COLOR: sg.Color : {1, 1, 1, 1}
+
+
+UiID :: u32
+
+UiState :: struct {
+	hover_id:        UiID,
+	click_captured:  bool,
+	down_clicked_id: u32,
+}
+
+reset_ui_state :: proc() {
+	ui_state.click_captured = false
+
+
+	if inputs.button_just_pressed[sapp.Mousebutton.LEFT] {
+		ui_state.down_clicked_id = 0
+	}
+}
+
+ui_state: UiState
+
+main_menu :: proc() {
+	clear_color = MAIN_MENU_CLEAR_COLOR
+	set_menu_projection()
+	mouse_world_position = mouse_to_matrix()
+	start_btn_pos := V2_ZERO
+	button_height: f32 = 120
+	button_width: f32 = 450
+	padding: f32 = 20
+
+
+	if bordered_button(start_btn_pos, {button_width, button_height}, "Start Game", 48, 1) {
+		app_state = .GamePlay
+	}
+	start_btn_pos.y -= button_height + padding
+	if bordered_button(start_btn_pos, {button_width, button_height}, "Options", 48, 2) {
+	}
+	start_btn_pos.y -= button_height + padding
+	if bordered_button(start_btn_pos, {button_width, button_height}, "Exit", 48, 3) {
+	}
+}
+
+
+frame :: proc "c" () {
+	context = runtime.default_context()
+
+
+	switch app_state {
+	case .MainMenu:
+		main_menu()
+	case .GamePlay:
+		game_play()
+	}
+	reset_ui_state()
 
 	gfx_update()
 	inputs_end_frame()
+
 }
 
 cleanup :: proc "c" () {

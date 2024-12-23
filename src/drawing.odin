@@ -72,6 +72,9 @@ default_sampler: sg.Sampler
 vbo: sg.Buffer
 ibo: sg.Buffer
 
+
+clear_color: sg.Color = {0.89, 0.7, 0.3, 1.0}
+
 gfx_init :: proc() {
 
 	default_sampler = sg.make_sampler({})
@@ -111,7 +114,7 @@ gfx_init :: proc() {
 
 	// default pass action
 	state.pass_action = {
-		colors = {0 = {load_action = .CLEAR, clear_value = {0.89, 0.7, 0.3, 1.0}}},
+		colors = {0 = {load_action = .CLEAR, clear_value = clear_color}},
 	}
 
 
@@ -327,6 +330,19 @@ set_ui_camera_projection :: proc() {
 }
 
 
+set_menu_projection :: proc() {
+	using linalg
+	draw_frame.projection = matrix_ortho3d_f32(
+		-(auto_cast sapp.width()),
+		auto_cast sapp.width(),
+		-(auto_cast sapp.height()),
+		auto_cast sapp.height(),
+		-1,
+		1,
+	)
+}
+
+
 measure_text :: proc(text: string, font_size: f32 = DEFAULT_FONT_SIZE) -> Vector2 {
 	x: f32
 	size_y: f32 = 0.0
@@ -356,6 +372,20 @@ measure_text :: proc(text: string, font_size: f32 = DEFAULT_FONT_SIZE) -> Vector
 	}
 
 	return {x, size_y} * scale
+}
+
+
+draw_text_center_center :: proc(
+	center_pos: Vector2,
+	text: string,
+	col := COLOR_WHITE,
+	font_size: f32 = DEFAULT_FONT_SIZE,
+) {
+	text_size := measure_text(text, font_size)
+
+	pos := center_pos - {text_size.x * 0.5, text_size.y * 0.5}
+
+	draw_text(pos, text, col, font_size)
 }
 
 
@@ -390,7 +420,7 @@ draw_text :: proc(
 		advance_y: f32
 		q: aligned_quad
 		scale: f32 = font_size / f32(DEFAULT_FONT_SIZE)
-		fmt.println(scale, font_size, DEFAULT_FONT_SIZE)
+
 		GetBakedQuad(
 			&font.char_data[0],
 			font_bitmap_w,

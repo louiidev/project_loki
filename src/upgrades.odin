@@ -15,6 +15,8 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Roll Speed"
 	case .ROLL_STAMINIA:
 		return "Roll staminia"
+	case .AMMO_UPGRADE:
+		return "Ammo Upgrade"
 	}
 
 
