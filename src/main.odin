@@ -107,6 +107,7 @@ PLAYER_INITIAL_BULLETS :: 6
 PLAYER_INITIAL_RELOAD_TIME :: 1.0
 INITIAL_NXT_LEVEL_XP_AMOUNT :: 3
 UPGRADE_TIMER_SHOW_TIME :: 0.9
+STUN_TIME :: 0.5
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -795,9 +796,8 @@ game_play :: proc() {
 			update_entity_timers(&enemy, dt)
 
 			knockback_flash: f32 = 0
-			if enemy.knockback_timer > 0 {
+			if enemy.knockback_timer > 0 || enemy.stun_timer > 0.2 {
 				knockback_flash = 1
-				fmt.println("TEST")
 			}
 
 			knockback_logic_update(&enemy, dt, ENEMY_KNOCKBACK_VELOCITY, &enemy.position)
@@ -861,6 +861,7 @@ game_play :: proc() {
 					if (p.last_hit_ent_id != e.id &&
 						   circles_overlap(p.position, 6, e.position, 6)) {
 						knockback_ent(&e, linalg.normalize(p.velocity))
+						e.stun_timer = STUN_TIME
 						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
 							p.active = false
 							fmt.println(game_data.player_upgrade[Upgrade.PIERCING_SHOT])
@@ -969,13 +970,15 @@ game_play :: proc() {
 
 
 	{
+		set_menu_projection()
+		mouse_ui_pos = mouse_to_matrix()
 		using sapp
 		// UPGRADE MENU
 		if game_data.show_upgrade_ui {
 
-			box_width: f32 = 40
-			box_height: f32 = 60
-			padding: f32 = 10
+			box_width: f32 = 340
+			box_height: f32 = 500
+			padding: f32 = 30
 			xform := transform_2d({-box_width - padding, 0.0})
 			position: Vector2 = {-box_width - padding, 0.0}
 			for i := 0; i < len(game_data.next_upgrades); i += 1 {
@@ -999,12 +1002,20 @@ game_play :: proc() {
 				}
 				draw_rect_center_xform(xform, {box_width, box_height}, color)
 				heading := get_upgrade_heading(game_data.next_upgrades[i])
+				description := get_upgrade_description(game_data.next_upgrades[i])
 
 				draw_text_center(
-					position - {0.0, -box_height * 0.5 + 6 + 1},
+					position - {0.0, -box_height * 0.5 + 40 + 10},
 					heading,
 					{0, 0, 0, 1},
-					6,
+					48,
+				)
+
+				draw_text_center(
+					position - {0.0, -box_height * 0.5 + 40 + 10 + 50},
+					description,
+					{0, 0, 0, 1},
+					32,
 				)
 
 				position += {box_width + padding, 0}

@@ -5,6 +5,9 @@ import "core:math/linalg"
 
 
 move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
+	if (entity.stun_timer > 0) {
+		return
+	}
 	target_position := game_data.player.position
 	distance_from_target := linalg.distance(target_position, entity.position)
 	delta_x: f32 = target_position.x - entity.position.x
@@ -26,6 +29,7 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
 		   enemy.health <= 0 ||
 		   entity == &enemy ||
 		   enemy.knockback_timer > 0 ||
+		   enemy.stun_timer > 0 ||
 		   entity.speed > enemy.speed {
 			continue
 		}
