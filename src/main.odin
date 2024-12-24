@@ -244,7 +244,7 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 
 damage_player :: proc(damage_amount: int) {
 	using game_data
-	if player.i_frame_timer <= 0 {
+	if player.i_frame_timer <= 0 && player.animation_state != .ROLLING {
 		player.health -= damage_amount
 		player.i_frame_timer = PLAYER_I_FRAME_TIMEOUT_AMOUNT
 
@@ -883,7 +883,8 @@ game_play :: proc() {
 					   game_data.player.collision_radius,
 					   game_data.player.position,
 					   4,
-				   )) {
+				   )) &&
+			   game_data.player.animation_state != .ROLLING {
 				// PLAYER dmg
 
 				p.active = false
