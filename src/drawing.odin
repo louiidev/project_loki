@@ -227,7 +227,6 @@ draw_quad_xform_in_frame :: proc(
 		assert(false)
 		return
 	}
-
 	uv0 := quad.uv
 	default_uv: [4]Vector2 = {DEFAULT_UV.xy, DEFAULT_UV.xw, DEFAULT_UV.zw, DEFAULT_UV.zy}
 	if quad.uv == default_uv {

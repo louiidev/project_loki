@@ -22,6 +22,8 @@ import t "core:time"
 EnemyType :: enum {
 	BAT,
 	CRAWLER,
+	BULL,
+	CACTUS,
 }
 
 AnimationState :: enum {
@@ -237,8 +239,16 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 		enemy.attack_timer = CRAWLER_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
 	case .BAT:
 		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+	case .BULL:
+		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+	case .CACTUS:
+
 	}
-	knockback_ent(&enemy.entity, direction)
+	if (enemy.type != .CACTUS) {
+		knockback_ent(&enemy.entity, direction)
+		fmt.println("knock back")
+	}
+
 }
 
 
@@ -325,28 +335,6 @@ create_entity :: proc(position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
 	entity.id = last_id
 
 	return entity
-}
-
-
-create_bat :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
-	enemy.type = .BAT
-	enemy.speed = 20
-	enemy.weapon_cooldown_timer = 10
-	enemy.id = last_id
-	return enemy
-}
-
-create_crawler :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
-	enemy.type = .CRAWLER
-	enemy.speed = 20
-	enemy.id = last_id
-	return enemy
 }
 
 spawn_projectile_particle :: proc(p: Projectile, sprite_cell_start_y: int) {
@@ -478,6 +466,10 @@ game_play :: proc() {
 				append(&game_data.enemies, create_bat(position))
 			case .CRAWLER:
 				append(&game_data.enemies, create_crawler(position))
+			case .BULL:
+				append(&game_data.enemies, create_bull(position))
+			case .CACTUS:
+				append(&game_data.enemies, create_cactus(position))
 			}
 		}
 	}
@@ -778,6 +770,10 @@ game_play :: proc() {
 				crawler_update_logic(&enemy, dt)
 			case .BAT:
 				bat_update_logic(&enemy, dt)
+			case .BULL:
+				bull_update_logic(&enemy, dt)
+			case .CACTUS:
+				cactus_update_logic(&enemy, dt)
 			}
 
 
@@ -786,13 +782,7 @@ game_play :: proc() {
 			if flip_x {
 				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
 			}
-			sprite_y_index := 0
-			switch (enemy.type) {
-			case .BAT:
-				sprite_y_index = 0
-			case .CRAWLER:
-				sprite_y_index = 1
-			}
+			sprite_y_index: int = auto_cast enemy.type
 			update_entity_timers(&enemy, dt)
 
 			knockback_flash: f32 = 0
@@ -860,7 +850,7 @@ game_play :: proc() {
 
 					if (p.last_hit_ent_id != e.id &&
 						   circles_overlap(p.position, 6, e.position, 6)) {
-						knockback_ent(&e, linalg.normalize(p.velocity))
+						knockback_enemy(&e, linalg.normalize(p.velocity))
 						e.stun_timer = STUN_TIME
 						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
 							p.active = false

@@ -102,3 +102,53 @@ bat_update_logic :: proc(entity: ^Entity, dt: f32) {
 		entity.weapon_cooldown_timer = 5
 	}
 }
+
+
+bull_update_logic :: proc(entity: ^Entity, dt: f32) {
+
+}
+
+cactus_update_logic :: proc(entity: ^Entity, dt: f32) {
+
+}
+
+create_bat :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .BAT
+	enemy.speed = 20
+	enemy.weapon_cooldown_timer = 10
+	enemy.id = last_id
+	return enemy
+}
+
+create_crawler :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .CRAWLER
+	enemy.speed = 20
+	enemy.id = last_id
+	return enemy
+}
+
+create_bull :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .BULL
+	enemy.speed = 20
+	enemy.id = last_id
+	return enemy
+}
+
+create_cactus :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .CACTUS
+	enemy.speed = 20
+	enemy.id = last_id
+	return enemy
+}
