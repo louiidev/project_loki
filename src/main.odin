@@ -162,6 +162,11 @@ GameRunState :: struct {
 	current_xp:            int,
 	to_next_level_xp:      int,
 
+	// waves
+	current_wave:          int,
+	time_left_in_wave:     f32,
+
+
 	// upgrades
 	slowdown_multiplier:   f32,
 	timer_to_show_upgrade: f32,
@@ -961,15 +966,23 @@ game_play :: proc() {
 
 
 	{
-		set_menu_projection()
+		set_ui_projection_alignment(.bottom_center)
 		mouse_ui_pos = mouse_to_matrix()
 		using sapp
+
+		draw_text_center(
+			{0, f32(sapp.height()) - 100},
+			fmt.tprintf("Wave %d", game_data.current_wave),
+			30,
+		)
+
+		set_ui_projection_alignment(.center_center)
 		// UPGRADE MENU
 		if game_data.show_upgrade_ui {
 
-			box_width: f32 = 340
-			box_height: f32 = 500
-			padding: f32 = 30
+			box_width: f32 = 180
+			box_height: f32 = 250
+			padding: f32 = 20
 			xform := transform_2d({-box_width - padding, 0.0})
 			position: Vector2 = {-box_width - padding, 0.0}
 			for i := 0; i < len(game_data.next_upgrades); i += 1 {
@@ -998,15 +1011,15 @@ game_play :: proc() {
 				draw_text_center(
 					position - {0.0, -box_height * 0.5 + 40 + 10},
 					heading,
+					36,
 					{0, 0, 0, 1},
-					48,
 				)
 
 				draw_text_center(
 					position - {0.0, -box_height * 0.5 + 40 + 10 + 50},
 					description,
+					24,
 					{0, 0, 0, 1},
-					32,
 				)
 
 				position += {box_width + padding, 0}
@@ -1021,13 +1034,12 @@ game_play :: proc() {
 
 	{
 		// Base UI
-		set_ui_camera_projection()
+		set_ui_projection_alignment(.bottom_left)
 		using game_data
 
 		draw_text(
 			Vector2{10, 10},
 			fmt.tprintf("Ammo: %d/%d", game_data.current_bullets_count, game_data.max_bullets),
-			COLOR_WHITE,
 			32,
 		)
 		size := measure_text("Ammo", 32)
@@ -1035,21 +1047,18 @@ game_play :: proc() {
 		draw_text(
 			Vector2{10, 10 + size.y + padding},
 			fmt.tprintf("Health: %d/%d", player.health, player.max_health),
-			COLOR_WHITE,
 			32,
 		)
 		size = measure_text("Health", 32) + size + padding
 		draw_text(
 			Vector2{10, 10 + size.y + padding},
 			fmt.tprintf("Stamina: %.1f/%.1f", player.roll_stamina, player.max_roll_stamina),
-			COLOR_WHITE,
 			32,
 		)
 		size = measure_text("Stamina", 32) + size + padding
 		draw_text(
 			Vector2{10, 10 + size.y + padding},
 			fmt.tprintf("XP: %d/%d", game_data.current_xp, game_data.to_next_level_xp),
-			COLOR_WHITE,
 			32,
 		)
 	}
@@ -1080,7 +1089,7 @@ ui_state: UiState
 
 main_menu :: proc() {
 	clear_color = MAIN_MENU_CLEAR_COLOR
-	set_menu_projection()
+	set_ui_projection_alignment(.center_center)
 	mouse_world_position = mouse_to_matrix()
 	start_btn_pos := V2_ZERO
 	button_height: f32 = 120

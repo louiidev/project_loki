@@ -326,29 +326,45 @@ draw_frame_reset :: proc(frame: ^DrawFrame) {
 }
 
 
-set_ui_camera_projection :: proc() {
-	using linalg
-	draw_frame.projection = matrix_ortho3d_f32(
-		0,
-		auto_cast sapp.width(),
-		0,
-		auto_cast sapp.height(),
-		-1,
-		1,
-	)
+Alignment :: enum {
+	bottom_left,
+	bottom_center,
+	center_center,
 }
 
 
-set_menu_projection :: proc() {
+set_ui_projection_alignment :: proc(alignment: Alignment) {
 	using linalg
-	draw_frame.projection = matrix_ortho3d_f32(
-		-(auto_cast sapp.width()),
-		auto_cast sapp.width(),
-		-(auto_cast sapp.height()),
-		auto_cast sapp.height(),
-		-1,
-		1,
-	)
+	switch alignment {
+	case .bottom_left:
+		draw_frame.projection = matrix_ortho3d_f32(
+			0,
+			auto_cast sapp.width(),
+			0,
+			auto_cast sapp.height(),
+			-1,
+			1,
+		)
+	case .bottom_center:
+		draw_frame.projection = matrix_ortho3d_f32(
+			-(auto_cast sapp.width()) * 0.5,
+			auto_cast sapp.width() * 0.5,
+			0,
+			auto_cast sapp.height(),
+			-1,
+			1,
+		)
+	case .center_center:
+		draw_frame.projection = matrix_ortho3d_f32(
+			-(auto_cast sapp.width()) * 0.5,
+			auto_cast sapp.width() * 0.5,
+			-(auto_cast sapp.height()) * 0.5,
+			auto_cast sapp.height() * 0.5,
+			-1,
+			1,
+		)
+	}
+
 }
 
 
@@ -387,48 +403,52 @@ measure_text :: proc(text: string, font_size: f32 = DEFAULT_FONT_SIZE) -> Vector
 draw_text_center_center :: proc(
 	center_pos: Vector2,
 	text: string,
-	col := COLOR_WHITE,
 	font_size: f32 = DEFAULT_FONT_SIZE,
+	col := COLOR_WHITE,
 ) {
 	text_size := measure_text(text, font_size)
 
 	pos := center_pos - {text_size.x * 0.5, text_size.y * 0.5}
 
-	draw_text(pos, text, col, font_size)
+	draw_text(pos, text, font_size, col)
 }
 
 
 draw_text_center :: proc(
 	center_pos: Vector2,
 	text: string,
-	col := COLOR_WHITE,
 	font_size: f32 = DEFAULT_FONT_SIZE,
+	col := COLOR_WHITE,
 ) {
 	text_size := measure_text(text, font_size)
 
 	pos := center_pos - {text_size.x * 0.5, 0}
 
-	draw_text(pos, text, col, font_size)
+	draw_text(pos, text, font_size, col)
 }
 
 draw_text :: proc(
 	pos: Vector2,
 	text: string,
-	col := COLOR_WHITE,
 	font_size: f32 = DEFAULT_FONT_SIZE,
+	col := COLOR_WHITE,
 ) {
 	using stbtt
 
 	x: f32
 	y: f32
 
+	scale: f32 = font_size / f32(DEFAULT_FONT_SIZE)
+	if font_size > 50 {
+		fmt.println(scale)
+	}
 
 	for char in text {
 
 		advance_x: f32
 		advance_y: f32
 		q: aligned_quad
-		scale: f32 = font_size / f32(DEFAULT_FONT_SIZE)
+
 
 		GetBakedQuad(
 			&font.char_data[0],

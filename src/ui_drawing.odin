@@ -111,7 +111,7 @@ bordered_button :: proc(
 	draw_rect_bordered_center_xform(xform, size, BUTTON_BORDER_SIZE, color, BUTTON_BORDER_COLOR)
 
 
-	draw_text_center_center(position, text, COLOR_WHITE, font_size)
+	draw_text_center_center(position, text, font_size)
 
 
 	return pressed
