@@ -84,6 +84,12 @@ Enemy :: struct {
 }
 
 
+ShopUpgrade :: struct {
+	upgrade:   Upgrade,
+	purchased: bool,
+	cost:      int,
+}
+
 Camera :: struct {
 	position: Vector2,
 }
@@ -107,9 +113,9 @@ PLAYER_INITIAL_PICKUP_RADIUS :: 8
 PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
 PLAYER_INITIAL_BULLETS :: 6
 PLAYER_INITIAL_RELOAD_TIME :: 1.0
-INITIAL_NXT_LEVEL_XP_AMOUNT :: 3
 UPGRADE_TIMER_SHOW_TIME :: 0.9
 STUN_TIME :: 0.5
+INITIAL_WAVE_TIME :: 10
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -159,8 +165,7 @@ GameRunState :: struct {
 	player:                Entity,
 	xp_pickups:            [dynamic]XpPickup,
 	enemy_spawn_timer:     f32,
-	current_xp:            int,
-	to_next_level_xp:      int,
+	money:                 int,
 
 	// waves
 	current_wave:          int,
@@ -170,8 +175,8 @@ GameRunState :: struct {
 	// upgrades
 	slowdown_multiplier:   f32,
 	timer_to_show_upgrade: f32,
-	show_upgrade_ui:       bool,
-	next_upgrades:         [3]Upgrade,
+	show_upgrade_shop:     bool,
+	next_upgrades:         [3]ShopUpgrade,
 	player_upgrade:        [Upgrade]int,
 	max_bullets:           int,
 	current_bullets_count: int,
@@ -182,6 +187,17 @@ app_state: AppState = .GamePlay
 
 camera: Camera
 draw_hitboxes := false
+
+
+generate_new_shop_upgrades :: proc() {
+	for i := 0; i < len(game_data.next_upgrades); i += 1 {
+		game_data.next_upgrades[i] = {
+			upgrade   = auto_cast rand.int31_max(len(Upgrade)),
+			purchased = false,
+			cost      = 2,
+		}
+	}
+}
 
 init :: proc "c" () {
 	context = runtime.default_context()
@@ -199,7 +215,8 @@ init :: proc "c" () {
 	game_data.player = create_entity()
 	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
 	game_data.max_bullets = PLAYER_INITIAL_BULLETS
-	game_data.to_next_level_xp = INITIAL_NXT_LEVEL_XP_AMOUNT
+	game_data.current_wave = 1
+	game_data.time_left_in_wave = INITIAL_WAVE_TIME
 }
 
 
@@ -292,6 +309,23 @@ knockback_logic_update :: proc(
 		potential_position.x += ent.knockback_velocity.x * delta_t
 		potential_position.y += ent.knockback_velocity.y * delta_t
 	}
+
+}
+
+
+purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
+	shop_upgrade.purchased = true
+	game_data.money -= shop_upgrade.cost
+	assert(game_data.money >= 0)
+
+
+	game_data.player_upgrade[shop_upgrade.upgrade] += 1
+
+	#partial switch (shop_upgrade.upgrade) {
+	case .AMMO_UPGRADE:
+		game_data.max_bullets += 2
+	}
+
 
 }
 
@@ -415,36 +449,41 @@ game_play :: proc() {
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
 	ui_dt: f32 = dt
 
-	if game_data.current_xp >= game_data.to_next_level_xp {
-		if game_data.show_upgrade_ui {
-			game_data.current_xp = 0.0
-			game_data.to_next_level_xp += 5
-		} else {
-			if game_data.timer_to_show_upgrade <= 0 {
-				game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
-			} else {
-				game_data.timer_to_show_upgrade = math.max(
-					game_data.timer_to_show_upgrade - dt,
-					0.0,
-				)
-				if game_data.timer_to_show_upgrade == 0 {
-					game_data.show_upgrade_ui = true
-					for i := 0; i < len(game_data.next_upgrades); i += 1 {
-						game_data.next_upgrades[i] = auto_cast rand.int31_max(len(Upgrade))
-					}
-				}
-			}
 
-			dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
-		}
-	}
-
-
-	if game_data.show_upgrade_ui {
+	if game_data.show_upgrade_shop {
 		dt = 0.0
 	}
 
+
+	game_data.time_left_in_wave = math.max(0, game_data.time_left_in_wave - dt)
 	game_data.enemy_spawn_timer -= dt
+
+
+	if game_data.time_left_in_wave <= 0 && !game_data.show_upgrade_shop {
+		for &e in game_data.enemies {
+			e.active = false
+		}
+		for &xp in game_data.xp_pickups {
+			xp.active = false
+		}
+		for &p in game_data.projectiles {
+			p.active = false
+		}
+
+
+		dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
+
+		if game_data.timer_to_show_upgrade <= 0 && game_data.show_upgrade_shop == true {
+			game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
+		} else {
+			game_data.timer_to_show_upgrade = math.max(game_data.timer_to_show_upgrade - dt, 0.0)
+			if game_data.timer_to_show_upgrade == 0 {
+				game_data.show_upgrade_shop = true
+				generate_new_shop_upgrades()
+			}
+		}
+
+	}
 
 	if game_data.enemy_spawn_timer <= 0 {
 		game_data.enemy_spawn_timer = rand.float32_range(
@@ -544,7 +583,7 @@ game_play :: proc() {
 		}
 	}
 
-	if game_data.current_xp < game_data.to_next_level_xp {
+	if game_data.timer_to_show_upgrade <= 0 && !game_data.show_upgrade_shop {
 		// XP pickups
 		for &xp in &game_data.xp_pickups {
 			if circles_overlap(
@@ -554,7 +593,7 @@ game_play :: proc() {
 				game_data.player.xp_pickup_radius,
 			) {
 				xp.active = false
-				game_data.current_xp += 1
+				game_data.money += 1
 			}
 
 			xform := translate_mat4({xp.position.x, xp.position.y, 0.0})
@@ -765,6 +804,7 @@ game_play :: proc() {
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
 				append(&game_data.xp_pickups, XpPickup{enemy.position, true})
+				enemy.active = false
 				continue
 			}
 
@@ -817,7 +857,7 @@ game_play :: proc() {
 		// clean up enemies
 		for i := len(game_data.enemies) - 1; i >= 0; i -= 1 {
 			enemy := &game_data.enemies[i]
-			if enemy.health <= 0 {
+			if !enemy.active {
 				ordered_remove(&game_data.enemies, i)
 			}
 		}
@@ -949,25 +989,24 @@ game_play :: proc() {
 
 	mouse_ui_pos := mouse_to_matrix()
 
-	{
-		// XP bar
-		half_height := pixel_height / 2.0
+	// {
+	// 	// XP bar
+	// 	half_height := pixel_height / 2.0
 
-		draw_status_bar(
-			{0.0, half_height - 10},
-			Vector4{0.0, 0.0, 1.0, 1.0},
-			auto_cast game_data.current_xp,
-			auto_cast game_data.to_next_level_xp,
-			100,
-			5,
-			1,
-		)
-	}
+	// 	draw_status_bar(
+	// 		{0.0, half_height - 10},
+	// 		Vector4{0.0, 0.0, 1.0, 1.0},
+	// 		auto_cast game_data.current_xp,
+	// 		auto_cast game_data.to_next_level_xp,
+	// 		100,
+	// 		5,
+	// 		1,
+	// 	)
+	// }
 
 
 	{
 		set_ui_projection_alignment(.bottom_center)
-		mouse_ui_pos = mouse_to_matrix()
 		using sapp
 
 		draw_text_center(
@@ -975,38 +1014,38 @@ game_play :: proc() {
 			fmt.tprintf("Wave %d", game_data.current_wave),
 			30,
 		)
+		draw_text_center(
+			{0, f32(sapp.height()) - 135},
+			fmt.tprintf("Time left %.0f", game_data.time_left_in_wave),
+			30,
+		)
 
 		set_ui_projection_alignment(.center_center)
+		mouse_world_position = mouse_to_matrix()
 		// UPGRADE MENU
-		if game_data.show_upgrade_ui {
+		if game_data.show_upgrade_shop {
 
 			box_width: f32 = 180
 			box_height: f32 = 250
 			padding: f32 = 20
 			xform := transform_2d({-box_width - padding, 0.0})
 			position: Vector2 = {-box_width - padding, 0.0}
+
+			if bordered_button({-75, -box_height - 25}, {100, 50}, "Reroll shop", 20, 1) {
+				generate_new_shop_upgrades()
+			}
+			if bordered_button({75, -box_height - 25}, {100, 50}, "Next Wave", 20, 2) {
+				game_data.current_wave += 1
+				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
+				game_data.show_upgrade_shop = false
+			}
+
 			for i := 0; i < len(game_data.next_upgrades); i += 1 {
 				color := COLOR_WHITE
-				if aabb_contains(position, {box_width, box_height}, mouse_ui_pos) {
-					color.rgb = 0.9
 
-					if inputs.mouse_just_pressed[Mousebutton.LEFT] {
-						game_data.show_upgrade_ui = false
-
-						game_data.player_upgrade[game_data.next_upgrades[i]] += 1
-
-						#partial switch (game_data.next_upgrades[i]) {
-						case .AMMO_UPGRADE:
-							game_data.max_bullets += 2
-						}
-
-
-						break
-					}
-				}
 				draw_rect_center_xform(xform, {box_width, box_height}, color)
-				heading := get_upgrade_heading(game_data.next_upgrades[i])
-				description := get_upgrade_description(game_data.next_upgrades[i])
+				heading := get_upgrade_heading(game_data.next_upgrades[i].upgrade)
+				description := get_upgrade_description(game_data.next_upgrades[i].upgrade)
 
 				draw_text_center(
 					position - {0.0, -box_height * 0.5 + 40 + 10},
@@ -1016,11 +1055,23 @@ game_play :: proc() {
 				)
 
 				draw_text_center(
-					position - {0.0, -box_height * 0.5 + 40 + 10 + 50},
+					position - {0.0, -box_height * 0.5 + 100},
 					description,
 					24,
 					{0, 0, 0, 1},
 				)
+
+				if bordered_button(
+					position - {0.0, box_height * 0.5 - 30},
+					{100, 50},
+					"Buy",
+					30,
+					100 + auto_cast game_data.next_upgrades[i].upgrade,
+					game_data.next_upgrades[i].purchased ||
+					game_data.money < game_data.next_upgrades[i].cost,
+				) {
+					purchase_shop_upgrade(&game_data.next_upgrades[i])
+				}
 
 				position += {box_width + padding, 0}
 				xform = xform * transform_2d({box_width + padding, 0.0})
@@ -1058,7 +1109,7 @@ game_play :: proc() {
 		size = measure_text("Stamina", 32) + size + padding
 		draw_text(
 			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("XP: %d/%d", game_data.current_xp, game_data.to_next_level_xp),
+			fmt.tprintf("Money: %d/%d", game_data.money),
 			32,
 		)
 	}
