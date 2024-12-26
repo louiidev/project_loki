@@ -19,6 +19,8 @@ import "core:strings"
 import t "core:time"
 
 
+log :: fmt.println
+
 EnemyType :: enum {
 	BAT,
 	CRAWLER,
@@ -79,8 +81,13 @@ AppState :: enum {
 }
 
 Enemy :: struct {
-	using entity: Entity,
-	type:         EnemyType,
+	using entity:     Entity,
+	type:             EnemyType,
+
+	// bull_attack_data
+	attack_direction: Vector2,
+	charge_up_time:   f32,
+	charge_distance:  f32,
 }
 
 
@@ -115,7 +122,7 @@ PLAYER_INITIAL_BULLETS :: 6
 PLAYER_INITIAL_RELOAD_TIME :: 1.0
 UPGRADE_TIMER_SHOW_TIME :: 0.9
 STUN_TIME :: 0.5
-INITIAL_WAVE_TIME :: 10
+INITIAL_WAVE_TIME :: 30
 
 DEFAULT_ENT :: Entity {
 	active                   = true,

@@ -103,13 +103,64 @@ bat_update_logic :: proc(entity: ^Entity, dt: f32) {
 	}
 }
 
+BULL_CHARGE_DIST :: 80
+BULL_MAX_CHARGE_DIST: f32 : 130
+BULL_CHARGE_SPEED: f32 : 140
+// time to attack
+// charge direction
 
-bull_update_logic :: proc(entity: ^Entity, dt: f32) {
+bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	target_position := game_data.player.position
+	distance_from_target := linalg.distance(target_position, entity.position)
 
+
+	// If bull has charged attack already
+	// don't reset attack
+	// if bull isn't close to player
+	// move close to player
+	//
+
+	if distance_from_target > BULL_CHARGE_DIST &&
+	   entity.weapon_cooldown_timer <= 0 &&
+	   entity.attack_direction == V2_ZERO {
+		move_entity_towards_player(entity, dt)
+		entity.charge_distance = 0
+	} else if entity.attack_direction == V2_ZERO && entity.charge_distance == 0 {
+		entity.attack_direction = linalg.normalize(target_position - entity.position)
+		entity.weapon_cooldown_timer = 1.5
+	}
+
+	if entity.weapon_cooldown_timer <= 0 &&
+	   entity.charge_distance == 0 &&
+	   entity.attack_direction != V2_ZERO {
+		entity.attack_direction = linalg.normalize(target_position - entity.position)
+	}
+
+	if entity.weapon_cooldown_timer <= 0 &&
+	   entity.attack_direction != V2_ZERO &&
+	   entity.charge_distance < BULL_MAX_CHARGE_DIST {
+		x := entity.attack_direction.x * dt * BULL_CHARGE_SPEED
+		y := entity.attack_direction.y * dt * BULL_CHARGE_SPEED
+		dist_this_frame := linalg.length(Vector2{x, y})
+		entity.charge_distance += dist_this_frame
+
+		entity.position += {x, y}
+	} else if entity.charge_distance >= BULL_MAX_CHARGE_DIST {
+		entity.attack_direction = V2_ZERO
+		entity.weapon_cooldown_timer = 0
+		entity.charge_distance = 0
+		log("reset")
+	}
+
+	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
+		damage_player(1)
+	}
 }
 
 cactus_update_logic :: proc(entity: ^Entity, dt: f32) {
-
+	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
+		damage_player(1)
+	}
 }
 
 create_bat :: proc(position: Vector2) -> Enemy {
