@@ -217,6 +217,7 @@ init :: proc "c" () {
 	game_data.max_bullets = PLAYER_INITIAL_BULLETS
 	game_data.current_wave = 1
 	game_data.time_left_in_wave = INITIAL_WAVE_TIME
+	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
 }
 
 
@@ -268,7 +269,6 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	}
 	if (enemy.type != .CACTUS) {
 		knockback_ent(&enemy.entity, direction)
-		fmt.println("knock back")
 	}
 
 }
@@ -447,7 +447,7 @@ GAMEPLAY_CLEAR_COLOR: sg.Color : {0.89, 0.7, 0.3, 1.0}
 game_play :: proc() {
 	clear_color = GAMEPLAY_CLEAR_COLOR
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
-	ui_dt: f32 = dt
+	app_dt: f32 = dt
 
 
 	if game_data.show_upgrade_shop {
@@ -460,28 +460,27 @@ game_play :: proc() {
 
 
 	if game_data.time_left_in_wave <= 0 && !game_data.show_upgrade_shop {
-		for &e in game_data.enemies {
-			e.active = false
-		}
-		for &xp in game_data.xp_pickups {
-			xp.active = false
-		}
-		for &p in game_data.projectiles {
-			p.active = false
-		}
 
 
 		dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
+		fmt.println(dt)
 
-		if game_data.timer_to_show_upgrade <= 0 && game_data.show_upgrade_shop == true {
+		game_data.timer_to_show_upgrade = math.max(game_data.timer_to_show_upgrade - app_dt, 0.0)
+		if game_data.timer_to_show_upgrade <= 0 {
 			game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
-		} else {
-			game_data.timer_to_show_upgrade = math.max(game_data.timer_to_show_upgrade - dt, 0.0)
-			if game_data.timer_to_show_upgrade == 0 {
-				game_data.show_upgrade_shop = true
-				generate_new_shop_upgrades()
+			game_data.show_upgrade_shop = true
+			generate_new_shop_upgrades()
+			for &e in game_data.enemies {
+				e.active = false
+			}
+			for &xp in game_data.xp_pickups {
+				xp.active = false
+			}
+			for &p in game_data.projectiles {
+				p.active = false
 			}
 		}
+
 
 	}
 
@@ -899,7 +898,6 @@ game_play :: proc() {
 						e.stun_timer = STUN_TIME
 						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
 							p.active = false
-							fmt.println(game_data.player_upgrade[Upgrade.PIERCING_SHOT])
 						} else {
 							p.hits += 1
 							p.last_hit_ent_id = e.id
