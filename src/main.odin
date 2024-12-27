@@ -81,13 +81,14 @@ AppState :: enum {
 }
 
 Enemy :: struct {
-	using entity:     Entity,
-	type:             EnemyType,
+	using entity:          Entity,
+	type:                  EnemyType,
 
 	// bull_attack_data
-	attack_direction: Vector2,
-	charge_up_time:   f32,
-	charge_distance:  f32,
+	attack_direction:      Vector2,
+	charge_up_time:        f32,
+	charge_distance:       f32,
+	spawn_indicator_timer: f32,
 }
 
 
@@ -125,6 +126,7 @@ STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
+SPAWN_INDICATOR_TIME: f32 : 0.35
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -524,6 +526,9 @@ game_play :: proc() {
 			case .CACTUS:
 				append(&game_data.enemies, create_cactus(position))
 			}
+
+			game_data.enemies[len(game_data.enemies) - 1].spawn_indicator_timer =
+				SPAWN_INDICATOR_TIME
 		}
 	}
 
@@ -840,6 +845,20 @@ game_play :: proc() {
 				continue
 			}
 
+			if enemy.spawn_indicator_timer > 0 {
+				enemy.spawn_indicator_timer -= dt
+
+				draw_quad_center_xform(
+					transform_2d(enemy.position),
+					{16, 16},
+					.spawn_indicator,
+					DEFAULT_UV,
+					COLOR_WHITE,
+				)
+
+				continue
+			}
+
 			flip_x := enemy.position.x > game_data.player.position.x
 
 			switch (enemy.type) {
@@ -921,7 +940,7 @@ game_play :: proc() {
 
 			if p.player_owned {
 				for &e in game_data.enemies {
-					if (!e.active) {
+					if (!e.active || e.spawn_indicator_timer > 0) {
 						continue
 					}
 

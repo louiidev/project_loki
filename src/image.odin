@@ -16,16 +16,16 @@ ImageId :: enum {
 	projectiles,
 	weapons,
 	enemies,
-	font,
+	spawn_indicator,
 }
 
 Image_Column_Rows_Count := [ImageId][2]int {
-	.nil         = {0, 0},
-	.player      = {7, 2},
-	.projectiles = {3, 2},
-	.weapons     = {3, 1},
-	.enemies     = {4, 4},
-	.font        = {0, 0},
+	.nil             = {0, 0},
+	.player          = {7, 2},
+	.projectiles     = {3, 2},
+	.weapons         = {3, 1},
+	.enemies         = {4, 4},
+	.spawn_indicator = {1, 1},
 }
 
 
@@ -51,7 +51,7 @@ init_images :: proc() {
 	}
 
 	for img_name, id in ImageId {
-		if id == 0 || auto_cast id == ImageId.font {continue}
+		if id == 0 {continue}
 
 		if id > highest_id {
 			highest_id = id
