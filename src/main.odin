@@ -57,7 +57,6 @@ Entity :: struct {
 	animation_state:          AnimationState,
 	weapon_cooldown_timer:    f32,
 	max_weapon_cooldown_time: f32,
-	xp_pickup_radius:         f32,
 	i_frame_timer:            f32,
 	reload_timer:             f32,
 	time_to_reload:           f32,
@@ -117,7 +116,7 @@ WALK_ANIMATION_FRAMES :: 6
 ROLLING_ANIMATION_TIME :: 0.08
 ROLLING_ANIMATION_FRAMES :: 4
 PLAYER_INITIAL_FIRE_RATE :: 0.2
-PLAYER_INITIAL_PICKUP_RADIUS :: 8
+PLAYER_INITIAL_PICKUP_RADIUS :: 19
 PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
 PLAYER_INITIAL_BULLETS :: 6
 PLAYER_INITIAL_RELOAD_TIME :: 1.0
@@ -126,7 +125,7 @@ STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
-SPAWN_INDICATOR_TIME: f32 : 0.35
+SPAWN_INDICATOR_TIME: f32 : 0.50
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -138,8 +137,8 @@ DEFAULT_ENT :: Entity {
 	max_weapon_cooldown_time = PLAYER_INITIAL_FIRE_RATE,
 	health                   = 2,
 	max_health               = 2.,
-	xp_pickup_radius         = PLAYER_INITIAL_PICKUP_RADIUS,
 	time_to_reload           = PLAYER_INITIAL_RELOAD_TIME,
+	collision_radius         = 4,
 }
 
 Particle :: struct {
@@ -165,8 +164,9 @@ Projectile :: struct {
 }
 
 XpPickup :: struct {
-	position: Vector2,
-	active:   bool,
+	position:  Vector2,
+	active:    bool,
+	picked_up: bool,
 }
 
 GameRunState :: struct {
@@ -191,6 +191,8 @@ GameRunState :: struct {
 	player_upgrade:        [Upgrade]int,
 	max_bullets:           int,
 	current_bullets_count: int,
+	money_pickup_radius:   f32,
+
 
 	// camera shake
 	shake_amount:          f32,
@@ -232,6 +234,7 @@ init :: proc "c" () {
 	game_data.current_wave = 1
 	game_data.time_left_in_wave = INITIAL_WAVE_TIME
 	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
+	game_data.money_pickup_radius = PLAYER_INITIAL_PICKUP_RADIUS
 }
 
 
@@ -612,12 +615,22 @@ game_play :: proc() {
 		for &xp in &game_data.xp_pickups {
 			if circles_overlap(
 				xp.position,
-				4,
+				game_data.money_pickup_radius,
 				game_data.player.position,
-				game_data.player.xp_pickup_radius,
+				game_data.player.collision_radius,
 			) {
-				xp.active = false
+				// xp.active = false
+				xp.picked_up = true
 				game_data.money += 1
+				log(game_data.money_pickup_radius, game_data.player.collision_radius)
+			}
+
+			if xp.picked_up {
+				log("animate")
+				animate_v2_to_target(&xp.position, game_data.player.position, dt, 10)
+				if linalg.distance(xp.position, game_data.player.position) <= 4 {
+					xp.active = false
+				}
 			}
 
 			xform := translate_mat4({xp.position.x, xp.position.y, 0.0})
@@ -840,7 +853,7 @@ game_play :: proc() {
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
 				log("enemy drop")
-				append(&game_data.xp_pickups, XpPickup{enemy.position, true})
+				append(&game_data.xp_pickups, XpPickup{enemy.position, true, false})
 				enemy.active = false
 				continue
 			}
