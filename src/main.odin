@@ -123,6 +123,8 @@ PLAYER_INITIAL_RELOAD_TIME :: 1.0
 UPGRADE_TIMER_SHOW_TIME :: 0.9
 STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
+CAMERA_SHAKE_DECAY: f32 : 0.8
+SHAKE_POWER: f32 : 2.0
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -187,6 +189,9 @@ GameRunState :: struct {
 	player_upgrade:        [Upgrade]int,
 	max_bullets:           int,
 	current_bullets_count: int,
+
+	// camera shake
+	shake_amount:          f32,
 }
 
 game_data: GameRunState
@@ -468,9 +473,7 @@ game_play :: proc() {
 
 	if game_data.time_left_in_wave <= 0 && !game_data.show_upgrade_shop {
 
-
 		dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
-		fmt.println(dt)
 
 		game_data.timer_to_show_upgrade = math.max(game_data.timer_to_show_upgrade - app_dt, 0.0)
 		if game_data.timer_to_show_upgrade <= 0 {
@@ -547,6 +550,16 @@ game_play :: proc() {
 
 		}
 
+		if !game_data.show_upgrade_shop {
+			game_data.shake_amount = math.max(game_data.shake_amount - CAMERA_SHAKE_DECAY * dt, 0)
+			amount := math.pow(game_data.shake_amount, SHAKE_POWER)
+			// rotation = max_roll * amount * rand_range(-1, 1)
+
+			camera.position.x += amount * rand.float32_range(-1, 1)
+			camera.position.y += amount * rand.float32_range(-1, 1)
+		} else {
+			game_data.shake_amount = 0
+		}
 
 	}
 
@@ -589,7 +602,7 @@ game_play :: proc() {
 		}
 	}
 
-	if game_data.timer_to_show_upgrade <= 0 && !game_data.show_upgrade_shop {
+	if !game_data.show_upgrade_shop {
 		// XP pickups
 		for &xp in &game_data.xp_pickups {
 			if circles_overlap(
@@ -695,16 +708,17 @@ game_play :: proc() {
 					player.reload_timer = player.time_to_reload
 				}
 
+				camera_shake(0.7)
 
 				projectile: Projectile
 				projectile.animation_count = 2
-				projectile.time_per_frame = 0.02
+				projectile.time_per_frame = 0.05
 				projectile.position = attack_position
 				projectile.active = true
 				projectile.distance_limit = 250
 				projectile.sprite_cell_start = {0, 1}
 				projectile.rotation = -rotation_z
-				projectile.velocity = attack_direction * 100
+				projectile.velocity = attack_direction * 160
 				projectile.player_owned = true
 				projectile.damage_to_deal = 1
 				append(&game_data.projectiles, projectile)
@@ -733,7 +747,18 @@ game_play :: proc() {
 		}
 
 		uvs := get_frame_uvs(.player, {frame_x, frame_y}, {16, 16})
-		draw_quad_center_xform(xform, {auto_cast 16, auto_cast 16}, .player, uvs)
+		flash_amount: f32 = 0
+		if player.i_frame_timer > 0 {
+			flash_amount = 1
+		}
+		draw_quad_center_xform(
+			xform,
+			{auto_cast 16, auto_cast 16},
+			.player,
+			uvs,
+			COLOR_WHITE,
+			flash_amount,
+		)
 
 
 		weapon_rotation_angle := calc_rotation_to_target(mouse_world_position, player.position)
@@ -809,6 +834,7 @@ game_play :: proc() {
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
+				log("enemy drop")
 				append(&game_data.xp_pickups, XpPickup{enemy.position, true})
 				enemy.active = false
 				continue
@@ -1114,7 +1140,7 @@ game_play :: proc() {
 		size = measure_text("Stamina", 32) + size + padding
 		draw_text(
 			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("Money: %d/%d", game_data.money),
+			fmt.tprintf("Money: %d", game_data.money),
 			32,
 		)
 	}
