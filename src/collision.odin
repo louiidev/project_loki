@@ -1,28 +1,56 @@
 package main
 
+import "core:math"
 
-aabb_collide :: proc(a: Vector4, b: Vector4) -> (bool, Vector2) {
-	// Calculate overlap on each axis
-	dx := (a.z + a.x) / 2 - (b.z + b.x) / 2
-	dy := (a.w + a.y) / 2 - (b.w + b.y) / 2
 
-	overlap_x := (a.z - a.x) / 2 + (b.z - b.x) / 2 - abs(dx)
-	overlap_y := (a.w - a.y) / 2 + (b.w - b.y) / 2 - abs(dy)
+rect_circle_collision :: proc(rect: Vector4, circle_center: Vector2, radius: f32) -> bool {
 
-	// If there is no overlap on any axis, there is no collision
-	if overlap_x <= 0 || overlap_y <= 0 {
-		return false, Vector2{}
-	}
+    rect_min:= rect.xy;
+    size: = rect.zw;
+    dist_x:= math.abs(circle_center.x - (rect_min.x + size.x / 2));
+    dist_y:= math.abs(circle_center.y - (rect_min.y + size.y / 2));
 
-	// Find the penetration vector
-	penetration := Vector2{}
-	if overlap_x < overlap_y {
-		penetration.x = overlap_x if dx > 0 else -overlap_x
-	} else {
-		penetration.y = overlap_y if dy > 0 else -overlap_y
-	}
+    if (dist_x > (size.x / 2 + radius)) { return false; }
+    if (dist_y > (size.y / 2 + radius)) { return false; }
 
-	return true, penetration
+    if (dist_x <= (size.x / 2)) { return true; }
+    if (dist_y <= (size.y / 2)) { return true; }
+
+    dx:= dist_x - size.x / 2;
+    dy:= dist_y - size.y / 2;
+    return (dx * dx + dy * dy <= (radius * radius));
+}
+
+
+
+
+aabb_collide_center :: proc(a_center_position: Vector2, a_size: Vector2, b_center_position: Vector2, b_size: Vector2) -> (bool, Vector2) {
+    // Calculate distance between centers
+    dx := a_center_position.x - b_center_position.x
+    dy := a_center_position.y - b_center_position.y
+
+    // Calculate the combined half-extents
+    combined_half_width := (a_size.x + b_size.x) / 2
+    combined_half_height := (a_size.y + b_size.y) / 2
+
+    // Calculate overlap on each axis
+    overlap_x := combined_half_width - abs(dx)
+    overlap_y := combined_half_height - abs(dy)
+
+    // If there is no overlap on any axis, there is no collision
+    if overlap_x <= 0 || overlap_y <= 0 {
+        return false, Vector2{}
+    }
+
+    // Find the penetration vector (smallest displacement needed to separate the rectangles)
+    penetration := Vector2{}
+    if overlap_x < overlap_y {
+        penetration.x = overlap_x if dx > 0 else -overlap_x
+    } else {
+        penetration.y = overlap_y if dy > 0 else -overlap_y
+    }
+
+    return true, penetration
 }
 
 

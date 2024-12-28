@@ -23,6 +23,8 @@ v4 :: Vector4
 mat4 :: Matrix4
 
 COLOR_WHITE :: Vector4{1, 1, 1, 1}
+COLOR_GREEN :: Vector4{0, 1, 0, 1}
+COLOR_RED :: Vector4{1, 0, 0, 1}
 
 
 extend :: proc(v: Vector2, z: f32 = 0.0) -> Vector3 {

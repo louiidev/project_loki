@@ -17,6 +17,7 @@ ImageId :: enum {
 	weapons,
 	enemies,
 	spawn_indicator,
+	level_bounds,
 }
 
 Image_Column_Rows_Count := [ImageId][2]int {
@@ -26,6 +27,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.weapons         = {3, 1},
 	.enemies         = {4, 4},
 	.spawn_indicator = {1, 1},
+	.level_bounds    = {1, 1},
 }
 
 
@@ -112,7 +114,7 @@ Atlas :: struct {
 	sg_image: sg.Image,
 }
 atlas: Atlas
-atlas_width :: 250
+atlas_width :: 1024
 // We're hardcoded to use just 1 atlas now since I don't think we'll need more
 // It would be easy enough to extend though. Just add in more texture slots in the shader
 pack_images_into_atlas :: proc() {

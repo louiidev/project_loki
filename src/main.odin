@@ -126,6 +126,18 @@ INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
 SPAWN_INDICATOR_TIME: f32 : 0.50
+LEVEL_BOUNDS: Vector2 : {640, 336}
+HALF_BOUNDS: Vector2 : {LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.y * 0.5}
+
+WALLS: [4]Vector4 : {
+	{-HALF_BOUNDS.x - 10, -HALF_BOUNDS.y, 10, LEVEL_BOUNDS.y}, // left
+	{-HALF_BOUNDS.x, -HALF_BOUNDS.y - 10, LEVEL_BOUNDS.x, 10}, // bottom
+	{HALF_BOUNDS.x, -HALF_BOUNDS.y, 10, LEVEL_BOUNDS.y}, // right
+	{-HALF_BOUNDS.x, HALF_BOUNDS.y, LEVEL_BOUNDS.x, 10}, // up
+}
+DEBUG_HITBOXES :: true
+DEBUG_NO_ENEMIES :: true
+
 
 DEFAULT_ENT :: Entity {
 	active                   = true,
@@ -284,10 +296,12 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	case .CACTUS:
 
 	}
-	if (enemy.type != .CACTUS) {
-		knockback_ent(&enemy.entity, direction)
+
+	if enemy.type == .CACTUS || enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
+		return
 	}
 
+	knockback_ent(&enemy.entity, direction)
 }
 
 
@@ -423,6 +437,17 @@ mouse_to_matrix :: proc() -> Vector2 {
 }
 
 
+is_within_bounds :: proc(position: Vector2) -> bool {
+	if HALF_BOUNDS.x <= position.x ||
+	   HALF_BOUNDS.y <= position.y ||
+	   -HALF_BOUNDS.x > position.x ||
+	   -HALF_BOUNDS.y > position.y {
+		return false
+	}
+
+	return true
+}
+
 draw_status_bar :: proc(
 	position: Vector2,
 	color: Vector4,
@@ -454,6 +479,20 @@ draw_status_bar :: proc(
 }
 round_to_half :: proc(value: f32) -> f32 {
 	return math.round(value * 2) / 2
+}
+
+
+check_wall_collision :: proc(player_pos: Vector2, player_radius: f32, wall: Vector4) -> bool {
+	// Create player AABB centered on player position
+	player_half_size := player_radius / 2
+	player_box := Vector4 {
+		player_pos.x - player_half_size, // min x
+		player_pos.y - player_half_size, // min y
+		player_pos.x + player_half_size, // max x
+		player_pos.y + player_half_size, // max y
+	}
+	// Wall is already in min/max format
+	return rect_circle_collision(wall, player_pos, player_radius)
 }
 
 ENEMY_SPAWN_TIMER_MIN :: 2
@@ -499,7 +538,7 @@ game_play :: proc() {
 
 	}
 
-	if game_data.enemy_spawn_timer <= 0 {
+	if game_data.enemy_spawn_timer <= 0 && !DEBUG_NO_ENEMIES {
 		game_data.enemy_spawn_timer = rand.float32_range(
 			ENEMY_SPAWN_TIMER_MIN,
 			ENEMY_SPAWN_TIMER_MAX,
@@ -508,31 +547,31 @@ game_play :: proc() {
 		amount_to_spawn: int = rand.int_max(10) + 1
 
 
-		for i := 0; i < amount_to_spawn; i += 1 {
-			enemy_type: EnemyType = auto_cast rand.int31_max(len(EnemyType))
-			spawn_x: f32 = 330 * 0.5
-			spawn_y: f32 = 200 * 0.5
+		if game_data.time_left_in_wave > SPAWN_INDICATOR_TIME + 0.5 {
+			for i := 0; i < amount_to_spawn; i += 1 {
+				enemy_type: EnemyType = auto_cast rand.int31_max(len(EnemyType))
 
-			position: Vector2 =
-				{
-					math.sign(rand.float32_range(-1, 1)) * spawn_x,
-					math.sign(rand.float32_range(-1, 1)) * spawn_y,
-				} +
-				game_data.player.position
-			switch (enemy_type) {
-			case .BAT:
-				append(&game_data.enemies, create_bat(position))
-			case .CRAWLER:
-				append(&game_data.enemies, create_crawler(position))
-			case .BULL:
-				append(&game_data.enemies, create_bull(position))
-			case .CACTUS:
-				append(&game_data.enemies, create_cactus(position))
+				position: Vector2 = {
+					rand.float32_range(-LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.x * 0.5),
+					rand.float32_range(-LEVEL_BOUNDS.y * 0.5, LEVEL_BOUNDS.y * 0.5),
+				}
+				switch (enemy_type) {
+				case .BAT:
+					append(&game_data.enemies, create_bat(position))
+				case .CRAWLER:
+					append(&game_data.enemies, create_crawler(position))
+				case .BULL:
+					append(&game_data.enemies, create_bull(position))
+				case .CACTUS:
+					append(&game_data.enemies, create_cactus(position))
+				}
+
+				game_data.enemies[len(game_data.enemies) - 1].spawn_indicator_timer =
+					SPAWN_INDICATOR_TIME
 			}
-
-			game_data.enemies[len(game_data.enemies) - 1].spawn_indicator_timer =
-				SPAWN_INDICATOR_TIME
 		}
+
+
 	}
 
 	if game_data.player.active && can_player_move {
@@ -605,9 +644,21 @@ game_play :: proc() {
 				if (x + y) % 2 == 0 {
 					color = Vector4{0.88, 0.67, 0.32, 1.0}
 				}
+
+
+				if !is_within_bounds(tile_pos.xy) {
+					color.a = 0.3
+					color.rgb -= 0.5
+				}
+
 				draw_quad_xform(xform, {16, 16}, .nil, DEFAULT_UV, color)
 			}
 		}
+	}
+
+	{
+		// LEVEL BOUNDS
+		draw_quad_center_xform(Matrix4(1), LEVEL_BOUNDS, .level_bounds)
 	}
 
 	if !game_data.show_upgrade_shop {
@@ -626,7 +677,6 @@ game_play :: proc() {
 			}
 
 			if xp.picked_up {
-				log("animate")
 				animate_v2_to_target(&xp.position, game_data.player.position, dt, 10)
 				if linalg.distance(xp.position, game_data.player.position) <= 4 {
 					xp.active = false
@@ -654,100 +704,124 @@ game_play :: proc() {
 		using game_data
 
 
-		if can_player_move {
-			x := f32(int(inputs.button_down[D]) - int(inputs.button_down[A]))
-			y := f32(int(inputs.button_down[W]) - int(inputs.button_down[S]))
-			player_input: Vector2 = {x, y}
-			if x != 0 && y != 0 {
-				player_input = linalg.normalize(player_input)
-			}
-
-			if x != 0 || y != 0 {
-				if player.animation_state != .ROLLING {
-					player.animation_state = .WALKING
-				}
-			} else {
-				set_ent_animation_state(&player, .IDLE)
-			}
-
-			update_entity_timers(&player, dt)
-			update_player_animations(&player, dt)
-
-
-			speed := player.speed
-
-			if inputs.button_just_pressed[Keycode.SPACE] {
-				if player.roll_stamina > 0 && player.animation_state != .ROLLING {
-					set_ent_animation_state(&player, .ROLLING)
-				} else {
-					set_ent_animation_state(&player, .WALKING)
-				}
-			}
-
-			if player.animation_state == .ROLLING {
-				player.roll_stamina -= dt
-				speed = player.roll_speed
-
-				if player.roll_stamina <= 0 {
-					player.roll_stamina = 0
-					set_ent_animation_state(&player, .WALKING)
-				}
-			} else {
-				player.roll_stamina = math.min(player.roll_stamina + dt, player.max_roll_stamina)
-			}
-
-
-			rotation_z := -calc_rotation_to_target(mouse_world_position, player.position)
-			attack_direction: Vector2 = {math.cos(-rotation_z), math.sin(-rotation_z)}
-			gun_move_distance: f32 = 8.0
-			delta_x := gun_move_distance * math.cos(rotation_z)
-			delta_y := gun_move_distance * math.sin(rotation_z)
-			attack_position: Vector2 = player.position + {delta_x, -delta_y}
-			player_center_position := player.position + {-8, -8}
-
-			if inputs.mouse_down[Mousebutton.LEFT] || player.weapon_cooldown_timer > 0 {
-				speed = player.speed_while_shooting
-			}
-
-			if game_data.current_bullets_count == 0 {
-				if player.reload_timer <= 0 {
-					game_data.current_bullets_count = game_data.max_bullets
-				}
-			}
-
-			if inputs.mouse_down[Mousebutton.LEFT] &&
-			   player.weapon_cooldown_timer <= 0 &&
-			   game_data.current_bullets_count > 0 &&
-			   player.reload_timer <= 0 {
-
-				game_data.current_bullets_count -= 1
-
-				if game_data.current_bullets_count <= 0 {
-					player.reload_timer = player.time_to_reload
-				}
-
-				camera_shake(0.7)
-
-				projectile: Projectile
-				projectile.animation_count = 2
-				projectile.time_per_frame = 0.05
-				projectile.position = attack_position
-				projectile.active = true
-				projectile.distance_limit = 250
-				projectile.sprite_cell_start = {0, 1}
-				projectile.rotation = -rotation_z
-				projectile.velocity = attack_direction * 160
-				projectile.player_owned = true
-				projectile.damage_to_deal = 1
-				append(&game_data.projectiles, projectile)
-				if player.animation_state == .ROLLING {
-					set_ent_animation_state(&player, .WALKING)
-				}
-
-				player.weapon_cooldown_timer = player.max_weapon_cooldown_time
-			}
-			player.position += player_input * dt * speed
+		// if can_player_move {
+		x := f32(int(inputs.button_down[D]) - int(inputs.button_down[A]))
+		y := f32(int(inputs.button_down[W]) - int(inputs.button_down[S]))
+		player_input: Vector2 = {x, y}
+		if x != 0 && y != 0 {
+			player_input = linalg.normalize(player_input)
 		}
+
+		if x != 0 || y != 0 {
+			if player.animation_state != .ROLLING {
+				player.animation_state = .WALKING
+			}
+		} else {
+			set_ent_animation_state(&player, .IDLE)
+		}
+
+		update_entity_timers(&player, dt)
+		update_player_animations(&player, dt)
+
+
+		speed := player.speed
+
+		if inputs.button_just_pressed[Keycode.SPACE] {
+			if player.roll_stamina > 0 && player.animation_state != .ROLLING {
+				set_ent_animation_state(&player, .ROLLING)
+			} else {
+				set_ent_animation_state(&player, .WALKING)
+			}
+		}
+
+		if player.animation_state == .ROLLING {
+			player.roll_stamina -= dt
+			speed = player.roll_speed
+
+			if player.roll_stamina <= 0 {
+				player.roll_stamina = 0
+				set_ent_animation_state(&player, .WALKING)
+			}
+		} else {
+			player.roll_stamina = math.min(player.roll_stamina + dt, player.max_roll_stamina)
+		}
+
+
+		rotation_z := -calc_rotation_to_target(mouse_world_position, player.position)
+		attack_direction: Vector2 = {math.cos(-rotation_z), math.sin(-rotation_z)}
+		gun_move_distance: f32 = 8.0
+		delta_x := gun_move_distance * math.cos(rotation_z)
+		delta_y := gun_move_distance * math.sin(rotation_z)
+		attack_position: Vector2 = player.position + {delta_x, -delta_y}
+		player_center_position := player.position + {-8, -8}
+
+		if inputs.mouse_down[Mousebutton.LEFT] || player.weapon_cooldown_timer > 0 {
+			speed = player.speed_while_shooting
+		}
+
+		if game_data.current_bullets_count == 0 {
+			if player.reload_timer <= 0 {
+				game_data.current_bullets_count = game_data.max_bullets
+			}
+		}
+
+		if inputs.mouse_down[Mousebutton.LEFT] &&
+		   player.weapon_cooldown_timer <= 0 &&
+		   game_data.current_bullets_count > 0 &&
+		   player.reload_timer <= 0 {
+
+			game_data.current_bullets_count -= 1
+
+			if game_data.current_bullets_count <= 0 {
+				player.reload_timer = player.time_to_reload
+			}
+
+			camera_shake(0.7)
+
+			projectile: Projectile
+			projectile.animation_count = 2
+			projectile.time_per_frame = 0.05
+			projectile.position = attack_position
+			projectile.active = true
+			projectile.distance_limit = 250
+			projectile.sprite_cell_start = {0, 1}
+			projectile.rotation = -rotation_z
+			projectile.velocity = attack_direction * 160
+			projectile.player_owned = true
+			projectile.damage_to_deal = 1
+			append(&game_data.projectiles, projectile)
+			if player.animation_state == .ROLLING {
+				set_ent_animation_state(&player, .WALKING)
+			}
+
+			player.weapon_cooldown_timer = player.max_weapon_cooldown_time
+		}
+
+
+		potential_pos := player.position + player_input * dt * speed
+
+		// left wall
+		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[0]) {
+			player_input.x = math.max(0, player_input.x)
+		}
+
+		// bottom wall
+		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[1]) {
+			player_input.y = math.max(0, player_input.y)
+		}
+
+
+		// right wall
+		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[2]) {
+			player_input.x = math.min(0, player_input.x)
+		}
+
+		// top wall
+		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[3]) {
+			player_input.y = math.min(0, player_input.y)
+		}
+
+		player.position = player.position + player_input * dt * speed
 
 		// RENDER PLAYER
 		xform := linalg.matrix4_translate_f32(
@@ -804,6 +878,7 @@ game_play :: proc() {
 			player.max_roll_stamina,
 		)
 
+
 		// line
 		draw_rect_bordered_center_xform(
 			translate_mat4(extend(game_data.player.position + {0.0, 14})),
@@ -852,7 +927,6 @@ game_play :: proc() {
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
-				log("enemy drop")
 				append(&game_data.xp_pickups, XpPickup{enemy.position, true, false})
 				enemy.active = false
 				continue
@@ -871,8 +945,11 @@ game_play :: proc() {
 
 				continue
 			}
-
 			flip_x := enemy.position.x > game_data.player.position.x
+			if enemy.type == .CACTUS || enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
+				flip_x = false
+			}
+
 
 			switch (enemy.type) {
 			case .CRAWLER:
@@ -1016,7 +1093,7 @@ game_play :: proc() {
 	{
 		// DEBUGGER TOOLS
 		alpha: f32 = 0.2
-		if draw_hitboxes {
+		if DEBUG_HITBOXES {
 
 			for e in game_data.enemies {
 				xform := linalg.matrix4_translate(Vector3{e.position.x, e.position.y, 0.0})
@@ -1032,6 +1109,11 @@ game_play :: proc() {
 			}
 
 
+			for wall in WALLS {
+				draw_rect_xform(transform_2d(wall.xy), wall.zw, {0, 0, 0, 0.1})
+			}
+
+
 			xform := linalg.matrix4_translate_f32(
 				{game_data.player.position.x, game_data.player.position.y, alpha},
 			)
@@ -1039,7 +1121,7 @@ game_play :: proc() {
 
 			draw_quad_center_xform(
 				xform,
-				{auto_cast 8, auto_cast 8},
+				{game_data.player.collision_radius, game_data.player.collision_radius},
 				.nil,
 				DEFAULT_UV,
 				{0, 0, 1, alpha},
