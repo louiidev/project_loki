@@ -149,7 +149,6 @@ bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 		entity.attack_direction = V2_ZERO
 		entity.weapon_cooldown_timer = 0
 		entity.charge_distance = 0
-		log("reset")
 	}
 
 	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {

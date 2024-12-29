@@ -1,7 +1,7 @@
 package main
 
 import "core:math"
-
+import "core:math/linalg"
 
 rect_circle_collision :: proc(rect: Vector4, circle_center: Vector2, radius: f32) -> bool {
 
@@ -21,6 +21,29 @@ rect_circle_collision :: proc(rect: Vector4, circle_center: Vector2, radius: f32
     return (dx * dx + dy * dy <= (radius * radius));
 }
 
+
+circles_overlap :: proc(
+	a_pos_center: Vector2,
+	a_radius: f32,
+	b_pos_center: Vector2,
+	b_radius: f32,
+) -> bool {
+	distance := linalg.distance(a_pos_center, b_pos_center)
+	// Check if the distance is less than or equal to the sum of the radii
+	if (distance <= (a_radius + b_radius)) {
+		return true
+	}
+
+	return false
+}
+
+
+calculate_collision_point_circle_overlap :: proc ( a_pos_center: Vector2, b_pos_center: Vector2, a_radius: f32) -> Vector2 {
+    dir := linalg.normalize(b_pos_center - a_pos_center)
+    collision_point := a_pos_center + dir * a_radius
+
+    return collision_point
+}
 
 
 

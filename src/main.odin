@@ -63,20 +63,15 @@ Entity :: struct {
 }
 
 
-Upgrade :: enum {
-	PIERCING_SHOT,
-	FORK_SHOT,
-	RELOAD_SPEED,
-	ROLL_SPEED,
-	ROLL_STAMINIA,
-	HEALTH,
-	AMMO_UPGRADE,
-}
-
-
 AppState :: enum {
 	MainMenu,
 	GamePlay,
+}
+
+GameUIState :: enum {
+	none,
+	pause_menu,
+	upgrade_menu,
 }
 
 Enemy :: struct {
@@ -136,7 +131,7 @@ WALLS: [4]Vector4 : {
 	{-HALF_BOUNDS.x, HALF_BOUNDS.y, LEVEL_BOUNDS.x, 10}, // up
 }
 DEBUG_HITBOXES :: true
-DEBUG_NO_ENEMIES :: true
+DEBUG_NO_ENEMIES :: false
 
 
 DEFAULT_ENT :: Entity {
@@ -165,16 +160,6 @@ Particle :: struct {
 	time_per_frame:         f32,
 }
 
-Projectile :: struct {
-	using particle:            Particle,
-	player_owned:              bool,
-	distance_limit:            f32,
-	current_distance_traveled: f32,
-	damage_to_deal:            int,
-	hits:                      int,
-	last_hit_ent_id:           u32,
-}
-
 XpPickup :: struct {
 	position:  Vector2,
 	active:    bool,
@@ -198,7 +183,6 @@ GameRunState :: struct {
 	// upgrades
 	slowdown_multiplier:   f32,
 	timer_to_show_upgrade: f32,
-	show_upgrade_shop:     bool,
 	next_upgrades:         [3]ShopUpgrade,
 	player_upgrade:        [Upgrade]int,
 	max_bullets:           int,
@@ -208,6 +192,7 @@ GameRunState :: struct {
 
 	// camera shake
 	shake_amount:          f32,
+	ui_state:              GameUIState,
 }
 
 game_data: GameRunState
@@ -267,21 +252,6 @@ calc_rotation_to_target :: proc(a, b: Vector2) -> f32 {
 	delta_y := a.y - b.y
 	angle := linalg.atan2(delta_y, delta_x)
 	return angle
-}
-
-circles_overlap :: proc(
-	a_pos_center: Vector2,
-	a_radius: f32,
-	b_pos_center: Vector2,
-	b_radius: f32,
-) -> bool {
-	distance := linalg.distance(a_pos_center, b_pos_center)
-	// Check if the distance is less than or equal to the sum of the radii
-	if (distance <= (a_radius + b_radius)) {
-		return true
-	}
-
-	return false
 }
 
 
@@ -506,8 +476,12 @@ game_play :: proc() {
 	app_dt: f32 = dt
 
 
-	if game_data.show_upgrade_shop {
+	if game_data.ui_state != .none {
 		dt = 0.0
+	}
+
+	if inputs.button_just_pressed[sapp.Keycode.ESCAPE] {
+		game_data.ui_state = game_data.ui_state == .none ? .pause_menu : .none
 	}
 
 
@@ -515,14 +489,14 @@ game_play :: proc() {
 	game_data.enemy_spawn_timer -= dt
 
 
-	if game_data.time_left_in_wave <= 0 && !game_data.show_upgrade_shop {
+	if game_data.time_left_in_wave <= 0 && game_data.ui_state == .none {
 
 		dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
 
 		game_data.timer_to_show_upgrade = math.max(game_data.timer_to_show_upgrade - app_dt, 0.0)
 		if game_data.timer_to_show_upgrade <= 0 {
 			game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
-			game_data.show_upgrade_shop = true
+			game_data.ui_state = .upgrade_menu
 			generate_new_shop_upgrades()
 			for &e in game_data.enemies {
 				e.active = false
@@ -597,7 +571,7 @@ game_play :: proc() {
 
 		}
 
-		if !game_data.show_upgrade_shop {
+		if game_data.ui_state == .none {
 			game_data.shake_amount = math.max(game_data.shake_amount - CAMERA_SHAKE_DECAY * dt, 0)
 			amount := math.pow(game_data.shake_amount, SHAKE_POWER)
 			// rotation = max_roll * amount * rand_range(-1, 1)
@@ -661,7 +635,7 @@ game_play :: proc() {
 		draw_quad_center_xform(Matrix4(1), LEVEL_BOUNDS, .level_bounds)
 	}
 
-	if !game_data.show_upgrade_shop {
+	if game_data.ui_state == .none {
 		// XP pickups
 		for &xp in &game_data.xp_pickups {
 			if circles_overlap(
@@ -673,7 +647,6 @@ game_play :: proc() {
 				// xp.active = false
 				xp.picked_up = true
 				game_data.money += 1
-				log(game_data.money_pickup_radius, game_data.player.collision_radius)
 			}
 
 			if xp.picked_up {
@@ -778,18 +751,7 @@ game_play :: proc() {
 
 			camera_shake(0.7)
 
-			projectile: Projectile
-			projectile.animation_count = 2
-			projectile.time_per_frame = 0.05
-			projectile.position = attack_position
-			projectile.active = true
-			projectile.distance_limit = 250
-			projectile.sprite_cell_start = {0, 1}
-			projectile.rotation = -rotation_z
-			projectile.velocity = attack_direction * 160
-			projectile.player_owned = true
-			projectile.damage_to_deal = 1
-			append(&game_data.projectiles, projectile)
+			create_player_projectile(attack_position, attack_direction, rotation_z)
 			if player.animation_state == .ROLLING {
 				set_ent_animation_state(&player, .WALKING)
 			}
@@ -1014,6 +976,7 @@ game_play :: proc() {
 			p.position += distance_this_frame
 			p.current_distance_traveled += linalg.length(distance_this_frame)
 
+
 			if p.current_distance_traveled > p.distance_limit || !p.active {
 				p.active = false
 				continue
@@ -1039,7 +1002,29 @@ game_play :: proc() {
 						knockback_enemy(&e, linalg.normalize(p.velocity))
 						e.stun_timer = STUN_TIME
 						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
+
 							p.active = false
+
+							if game_data.player_upgrade[Upgrade.BOUNCE_SHOT] > 0 && p.can_bounce {
+								reflection := linalg.normalize(
+									linalg.reflect(
+										linalg.normalize(p.velocity),
+										calculate_collision_point_circle_overlap(
+											e.position,
+											p.position,
+											6,
+										),
+									),
+								)
+								create_player_projectile(
+									p.position,
+									reflection,
+									-calc_rotation_to_target(p.position, reflection),
+									e.id,
+									p.hits,
+									false,
+								)
+							}
 						} else {
 							p.hits += 1
 							p.last_hit_ent_id = e.id
@@ -1168,7 +1153,7 @@ game_play :: proc() {
 		set_ui_projection_alignment(.center_center)
 		mouse_world_position = mouse_to_matrix()
 		// UPGRADE MENU
-		if game_data.show_upgrade_shop {
+		if game_data.ui_state == .upgrade_menu {
 
 			box_width: f32 = 180
 			box_height: f32 = 250
@@ -1182,7 +1167,7 @@ game_play :: proc() {
 			if bordered_button({75, -box_height - 25}, {100, 50}, "Next Wave", 20, 2) {
 				game_data.current_wave += 1
 				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
-				game_data.show_upgrade_shop = false
+				game_data.ui_state = .none
 			}
 
 			for i := 0; i < len(game_data.next_upgrades); i += 1 {
@@ -1224,6 +1209,37 @@ game_play :: proc() {
 
 		}
 
+		if game_data.ui_state == .pause_menu {
+			draw_rect_bordered_center_xform(
+				transform_2d(V2_ZERO),
+				{400, 500},
+				10,
+				COLOR_WHITE,
+				{0.4, 0.4, 0.4, 1},
+			)
+
+			draw_text_center({0, 180}, "Pause Menu", 40, COLOR_BLACK)
+			button_pos_y: f32 = 50
+			button_font_size: f32 : 24
+			button_margin: f32 : 10
+
+
+			button_size := Vector2{200, 60}
+
+			if bordered_button({0, button_pos_y}, button_size, "Back", button_font_size, 2) {
+				game_data.ui_state = .none
+			}
+
+			button_pos_y -= button_margin + button_size.y
+			bordered_button({0, button_pos_y}, button_size, "Restart run", button_font_size, 0)
+			button_pos_y -= button_margin + button_size.y
+			bordered_button({0, button_pos_y}, button_size, "Options", button_font_size, 0)
+			button_pos_y -= button_margin + button_size.y
+
+			if bordered_button({0, button_pos_y}, button_size, "Exit", button_font_size, 1) {
+				sapp.quit()
+			}
+		}
 
 	}
 

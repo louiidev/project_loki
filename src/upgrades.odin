@@ -1,12 +1,25 @@
 package main
 
+Upgrade :: enum {
+	PIERCING_SHOT,
+	BOUNCE_SHOT,
+	RELOAD_SPEED,
+	ROLL_SPEED,
+	ROLL_STAMINIA,
+	HEALTH,
+	MAX_HEALTH,
+	AMMO_UPGRADE,
+}
+
 
 get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 	switch upgrade {
-	case .FORK_SHOT:
-		return "Fork Shot"
+	case .BOUNCE_SHOT:
+		return "Bounce Shot"
+	case .MAX_HEALTH:
+		return "Max Health +1"
 	case .HEALTH:
-		return "Health"
+		return "Health +1"
 	case .PIERCING_SHOT:
 		return "Piecing Shot"
 	case .RELOAD_SPEED:
@@ -26,10 +39,12 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 
 get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 	switch upgrade {
-	case .FORK_SHOT:
-		return "Creates a fork of the shot when hitting an enemy"
+	case .BOUNCE_SHOT:
+		return "Bounces off enemy after hit"
 	case .HEALTH:
-		return "Upgrades the players health by +2"
+		return "Replenishes the players health by +1"
+	case .MAX_HEALTH:
+		return "Upgrades the players max health by +1"
 	case .PIERCING_SHOT:
 		return "Pierces through enemies"
 	case .RELOAD_SPEED:
