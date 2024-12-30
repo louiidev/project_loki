@@ -1,5 +1,6 @@
 package main
 
+import "base:intrinsics"
 import "core:math"
 import "core:math/linalg"
 
@@ -28,4 +29,9 @@ camera_shake :: proc(amount: f32) {
 	if amount > game_data.shake_amount {
 		game_data.shake_amount = amount
 	}
+}
+
+
+sine_breathe_alpha :: proc(p: $T) -> T where intrinsics.type_is_float(T) {
+	return (math.sin((p - .25) * 2.0 * math.PI) / 2.0) + 0.5
 }

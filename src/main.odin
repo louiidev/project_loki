@@ -192,6 +192,7 @@ GameRunState :: struct {
 	// camera shake
 	shake_amount:          f32,
 	ui_state:              GameUIState,
+	world_time_elapsed:    f32,
 }
 
 game_data: GameRunState
@@ -463,6 +464,7 @@ GAMEPLAY_CLEAR_COLOR: sg.Color : {0.89, 0.7, 0.3, 1.0}
 game_play :: proc() {
 	clear_color = GAMEPLAY_CLEAR_COLOR
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
+	defer game_data.world_time_elapsed += dt
 	app_dt: f32 = dt
 
 
@@ -627,26 +629,30 @@ game_play :: proc() {
 
 	if game_data.ui_state == .none {
 		// XP pickups
-		for &xp in &game_data.money_pickups {
+		for &money in &game_data.money_pickups {
 			if circles_overlap(
-				xp.position,
+				money.position,
 				game_data.money_pickup_radius,
 				game_data.player.position,
 				game_data.player.collision_radius,
 			) {
 				// xp.active = false
-				xp.picked_up = true
+				money.picked_up = true
 				game_data.money += 1
 			}
 
-			if xp.picked_up {
-				animate_v2_to_target(&xp.position, game_data.player.position, dt, 15)
-				if linalg.distance(xp.position, game_data.player.position) <= 4 {
-					xp.active = false
+			if money.picked_up {
+				animate_v2_to_target(&money.position, game_data.player.position, dt, 15)
+				if linalg.distance(money.position, game_data.player.position) <= 4 {
+					money.active = false
 				}
 			}
 
-			xform := translate_mat4({xp.position.x, xp.position.y, 0.0})
+			draw_pos := money.position
+			draw_pos.y += sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 4
+			xform := translate_mat4({draw_pos.x, draw_pos.y, 0.0})
+
+
 			draw_quad_center_xform(xform, {16, 16}, .money, DEFAULT_UV, COLOR_WHITE)
 		}
 
@@ -727,28 +733,36 @@ game_play :: proc() {
 			}
 		}
 
+
 		if inputs.mouse_down[Mousebutton.LEFT] &&
 		   player.weapon_cooldown_timer <= 0 &&
 		   game_data.current_bullets_count > 0 &&
 		   player.reload_timer <= 0 {
 
-			game_data.current_bullets_count -= 1
+			spread := game_data.bullet_spread + auto_cast game_data.player_upgrade[.BULLETS]
+			camera_shake(0.7)
+			for i := 0; i <= game_data.player_upgrade[.BULLETS]; i += 1 {
+				if game_data.current_bullets_count > 0 {
+					game_data.current_bullets_count -= 1
+					rotation_with_randomness :=
+						rotation_z + math.to_radians(rand.float32_range(-spread, spread))
+					attack_direction: Vector2 = {
+						math.cos(rotation_with_randomness),
+						math.sin(rotation_with_randomness),
+					}
+					create_player_projectile(
+						attack_position,
+						attack_direction,
+						rotation_with_randomness,
+					)
+				}
+
+			}
 
 			if game_data.current_bullets_count <= 0 {
 				player.reload_timer = player.time_to_reload
 			}
 
-			camera_shake(0.7)
-			rotation_with_randomness :=
-				rotation_z +
-				math.to_radians(
-					rand.float32_range(-game_data.bullet_spread, game_data.bullet_spread),
-				)
-			attack_direction: Vector2 = {
-				math.cos(rotation_with_randomness),
-				math.sin(rotation_with_randomness),
-			}
-			create_player_projectile(attack_position, attack_direction, rotation_with_randomness)
 			if player.animation_state == .ROLLING {
 				set_ent_animation_state(&player, .WALKING)
 			}

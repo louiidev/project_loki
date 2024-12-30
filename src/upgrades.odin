@@ -9,6 +9,7 @@ Upgrade :: enum {
 	HEALTH,
 	MAX_HEALTH,
 	AMMO_UPGRADE,
+	BULLETS,
 }
 
 
@@ -30,6 +31,8 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Roll staminia"
 	case .AMMO_UPGRADE:
 		return "Ammo Upgrade"
+	case .BULLETS:
+		return "Bullets +1"
 	}
 
 
@@ -55,6 +58,8 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return "Upgrades the roll staminia by 10%"
 	case .AMMO_UPGRADE:
 		return "Upgrades the ammo by 2+"
+	case .BULLETS:
+		return "Upgrades the amount of bullets you fire by 1+"
 	}
 
 
