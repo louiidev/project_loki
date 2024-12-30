@@ -96,25 +96,34 @@ Camera :: struct {
 	position: Vector2,
 }
 
+
+// UPGRADES INITIAL VALUES
+PLAYER_INITIAL_BULLETS :: 6
+PLAYER_INITIAL_BULLET_SPREAD: f32 : 12.0
+PLAYER_INITIAL_RELOAD_TIME :: 1.0
+PLAYER_INITIAL_BULLET_VELOCITY :: 150.0
+PLAYER_INITIAL_FIRE_RATE :: 0.2
+PLAYER_INITIAL_PICKUP_RADIUS :: 19
+PLAYER_WALK_SPEED :: 50
+PLAYER_ROLL_SPEED :: 120
+INITAL_ROLL_STAMINIA :: 2
+ROLL_STAMINIA_ADD_ON_SHOT :: 0.1
+
 SPRITE_PIXEL_SIZE :: 16
 ENEMY_KNOCKBACK_VELOCITY :: 150
 ENEMY_KNOCKBACK_TIME :: 0.1
 CRAWLER_ATTACK_TIME :: 10
 BAT_ATTACK_TIME :: 10
 PLAYER_KNOCKBACK_VELOCITY :: 120
-PLAYER_WALK_SPEED :: 50
-PLAYER_ROLL_SPEED :: 120
-INITAL_ROLL_STAMINIA :: 2
-ROLL_STAMINIA_ADD_ON_SHOT :: 0.1
+
+
 WALK_ANIMATION_TIME :: 0.08
 WALK_ANIMATION_FRAMES :: 6
 ROLLING_ANIMATION_TIME :: 0.08
 ROLLING_ANIMATION_FRAMES :: 4
-PLAYER_INITIAL_FIRE_RATE :: 0.2
-PLAYER_INITIAL_PICKUP_RADIUS :: 19
+
 PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
-PLAYER_INITIAL_BULLETS :: 6
-PLAYER_INITIAL_RELOAD_TIME :: 1.0
+
 UPGRADE_TIMER_SHOW_TIME :: 0.9
 STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
@@ -149,7 +158,7 @@ DEFAULT_ENT :: Entity {
 }
 
 
-XpPickup :: struct {
+MoneyPickup :: struct {
 	position:  Vector2,
 	active:    bool,
 	picked_up: bool,
@@ -160,7 +169,7 @@ GameRunState :: struct {
 	projectiles:           [dynamic]Projectile,
 	particles:             [dynamic]Particle,
 	player:                Entity,
-	xp_pickups:            [dynamic]XpPickup,
+	money_pickups:         [dynamic]MoneyPickup,
 	enemy_spawn_timer:     f32,
 	money:                 int,
 
@@ -177,7 +186,8 @@ GameRunState :: struct {
 	max_bullets:           int,
 	current_bullets_count: int,
 	money_pickup_radius:   f32,
-
+	bullet_velocity:       f32,
+	bullet_spread:         f32,
 
 	// camera shake
 	shake_amount:          f32,
@@ -220,6 +230,8 @@ init :: proc "c" () {
 	game_data.time_left_in_wave = INITIAL_WAVE_TIME
 	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
 	game_data.money_pickup_radius = PLAYER_INITIAL_PICKUP_RADIUS
+	game_data.bullet_velocity = PLAYER_INITIAL_BULLET_VELOCITY
+	game_data.bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
 }
 
 
@@ -479,7 +491,7 @@ game_play :: proc() {
 			for &e in game_data.enemies {
 				e.active = false
 			}
-			for &xp in game_data.xp_pickups {
+			for &xp in game_data.money_pickups {
 				xp.active = false
 			}
 			for &p in game_data.projectiles {
@@ -615,7 +627,7 @@ game_play :: proc() {
 
 	if game_data.ui_state == .none {
 		// XP pickups
-		for &xp in &game_data.xp_pickups {
+		for &xp in &game_data.money_pickups {
 			if circles_overlap(
 				xp.position,
 				game_data.money_pickup_radius,
@@ -628,21 +640,21 @@ game_play :: proc() {
 			}
 
 			if xp.picked_up {
-				animate_v2_to_target(&xp.position, game_data.player.position, dt, 10)
+				animate_v2_to_target(&xp.position, game_data.player.position, dt, 15)
 				if linalg.distance(xp.position, game_data.player.position) <= 4 {
 					xp.active = false
 				}
 			}
 
 			xform := translate_mat4({xp.position.x, xp.position.y, 0.0})
-			draw_quad_center_xform(xform, {4, 4}, .nil, DEFAULT_UV, {0.0, 0.0, 1.0, 1.0})
+			draw_quad_center_xform(xform, {16, 16}, .money, DEFAULT_UV, COLOR_WHITE)
 		}
 
 		// clean up enemies
-		for i := len(game_data.xp_pickups) - 1; i >= 0; i -= 1 {
-			xp := &game_data.xp_pickups[i]
+		for i := len(game_data.money_pickups) - 1; i >= 0; i -= 1 {
+			xp := &game_data.money_pickups[i]
 			if !xp.active {
-				ordered_remove(&game_data.xp_pickups, i)
+				ordered_remove(&game_data.money_pickups, i)
 			}
 		}
 
@@ -698,11 +710,10 @@ game_play :: proc() {
 		}
 
 
-		rotation_z := -calc_rotation_to_target(mouse_world_position, player.position)
-		attack_direction: Vector2 = {math.cos(-rotation_z), math.sin(-rotation_z)}
 		gun_move_distance: f32 = 8.0
-		delta_x := gun_move_distance * math.cos(rotation_z)
-		delta_y := gun_move_distance * math.sin(rotation_z)
+		rotation_z := calc_rotation_to_target(mouse_world_position, player.position)
+		delta_x := gun_move_distance * math.cos(-rotation_z)
+		delta_y := gun_move_distance * math.sin(-rotation_z)
 		attack_position: Vector2 = player.position + {delta_x, -delta_y}
 		player_center_position := player.position + {-8, -8}
 
@@ -728,8 +739,16 @@ game_play :: proc() {
 			}
 
 			camera_shake(0.7)
-
-			create_player_projectile(attack_position, attack_direction, rotation_z)
+			rotation_with_randomness :=
+				rotation_z +
+				math.to_radians(
+					rand.float32_range(-game_data.bullet_spread, game_data.bullet_spread),
+				)
+			attack_direction: Vector2 = {
+				math.cos(rotation_with_randomness),
+				math.sin(rotation_with_randomness),
+			}
+			create_player_projectile(attack_position, attack_direction, rotation_with_randomness)
 			if player.animation_state == .ROLLING {
 				set_ent_animation_state(&player, .WALKING)
 			}
@@ -867,7 +886,7 @@ game_play :: proc() {
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
-				append(&game_data.xp_pickups, XpPickup{enemy.position, true, false})
+				append(&game_data.money_pickups, MoneyPickup{enemy.position, true, false})
 				enemy.active = false
 				continue
 			}
@@ -997,7 +1016,7 @@ game_play :: proc() {
 								create_player_projectile(
 									p.position,
 									reflection,
-									-calc_rotation_to_target(p.position, reflection),
+									calc_rotation_to_target(p.position, reflection),
 									e.id,
 									p.hits,
 									p.bounce_count + 1,
@@ -1032,7 +1051,6 @@ game_play :: proc() {
 				p.active = false
 				damage_player(1)
 			}
-
 
 			xform :=
 				linalg.matrix4_translate(Vector3{p.position.x, p.position.y, 0.0}) *
@@ -1069,9 +1087,11 @@ game_play :: proc() {
 			}
 
 			for p in game_data.projectiles {
+
 				xform :=
 					linalg.matrix4_translate(Vector3{p.position.x, p.position.y, 0.0}) *
 					linalg.matrix4_rotate(p.rotation, Vector3{0, 0, 1})
+
 
 				draw_quad_center_xform(xform, {12, 12}, .nil, DEFAULT_UV, {0, 1, 0, alpha})
 			}

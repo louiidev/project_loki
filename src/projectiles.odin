@@ -30,8 +30,8 @@ create_player_projectile :: proc(position: Vector2, direction: Vector2, rotation
 	projectile.active = true
 	projectile.distance_limit = 250
 	projectile.sprite_cell_start = {0, 1}
-	projectile.rotation = -rotation
-	projectile.velocity = direction * 160
+	projectile.rotation = rotation
+	projectile.velocity = direction * game_data.bullet_velocity
 	projectile.player_owned = true
 	projectile.damage_to_deal = 1
 	projectile.last_hit_ent_id = last_hit_id
