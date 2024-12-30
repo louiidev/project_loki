@@ -9,11 +9,11 @@ Projectile :: struct {
 	damage_to_deal:            int,
 	hits:                      int,
 	last_hit_ent_id:           u32,
-	can_bounce:                bool,
+	bounce_count:              int,
 }
 
 
-create_player_projectile :: proc(position: Vector2, direction: Vector2, rotation: f32, last_hit_id:u32 = 0, hits:int = 0, can_bounce: bool = true)  {
+create_player_projectile :: proc(position: Vector2, direction: Vector2, rotation: f32, last_hit_id:u32 = 0, hits:int = 0, bounce_count: int = 0)  {
     projectile: Projectile
 	projectile.animation_count = 2
 	projectile.time_per_frame = 0.05
@@ -27,6 +27,6 @@ create_player_projectile :: proc(position: Vector2, direction: Vector2, rotation
 	projectile.damage_to_deal = 1
 	projectile.last_hit_ent_id = last_hit_id
 	projectile.hits = hits
-	projectile.can_bounce = can_bounce
+	projectile.bounce_count = bounce_count
 	append(&game_data.projectiles, projectile)
 }

@@ -1002,10 +1002,10 @@ game_play :: proc() {
 						knockback_enemy(&e, linalg.normalize(p.velocity))
 						e.stun_timer = STUN_TIME
 						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
-
 							p.active = false
 
-							if game_data.player_upgrade[Upgrade.BOUNCE_SHOT] > 0 && p.can_bounce {
+							if game_data.player_upgrade[Upgrade.BOUNCE_SHOT] > p.bounce_count {
+
 								reflection := linalg.normalize(
 									linalg.reflect(
 										linalg.normalize(p.velocity),
@@ -1022,7 +1022,7 @@ game_play :: proc() {
 									-calc_rotation_to_target(p.position, reflection),
 									e.id,
 									p.hits,
-									false,
+									p.bounce_count + 1,
 								)
 							}
 						} else {
