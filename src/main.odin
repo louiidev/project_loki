@@ -158,6 +158,15 @@ DEFAULT_ENT :: Entity {
 }
 
 
+Explosion :: struct {
+	current_lifetime: f32,
+	max_lifetime:     f32,
+	size:             f32,
+	position:         Vector2,
+	active:           bool,
+}
+
+
 MoneyPickup :: struct {
 	position:  Vector2,
 	active:    bool,
@@ -193,6 +202,7 @@ GameRunState :: struct {
 	shake_amount:          f32,
 	ui_state:              GameUIState,
 	world_time_elapsed:    f32,
+	explosions:            [dynamic]Explosion,
 }
 
 game_data: GameRunState
@@ -255,6 +265,21 @@ calc_rotation_to_target :: proc(a, b: Vector2) -> f32 {
 	return angle
 }
 
+
+EXPLOSION_LIFETIME: f32 : 0.35
+create_explosion :: proc(position: Vector2) {
+
+
+	explosion: Explosion
+
+	size := rand.float32_range(16, 32)
+
+	explosion.size = size
+	explosion.position = position
+	explosion.max_lifetime = EXPLOSION_LIFETIME
+	explosion.active = true
+	append(&game_data.explosions, explosion)
+}
 
 knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	switch (enemy.type) {
@@ -1045,6 +1070,8 @@ game_play :: proc() {
 						spawn_particles(p.position, hex_to_rgb(0xffed73))
 						if e.health <= 0 {
 							spawn_particles(e.position, COLOR_WHITE)
+
+							// create_explosion(e.position)
 						}
 						game_data.player.roll_stamina = math.min(
 							game_data.player.roll_stamina + ROLL_STAMINIA_ADD_ON_SHOT,
@@ -1089,6 +1116,34 @@ game_play :: proc() {
 		update_render_particles(dt)
 	}
 
+
+	{
+		//explosions
+		for &explosion in &game_data.explosions {
+			color := COLOR_WHITE
+			if explosion.current_lifetime <= (EXPLOSION_LIFETIME * 0.1) {
+				color = COLOR_BLACK
+			}
+			explosion.current_lifetime += dt
+
+			if explosion.current_lifetime >= explosion.max_lifetime {
+				explosion.active = false
+			}
+			draw_quad_center_xform(
+				transform_2d(explosion.position),
+				{explosion.size, explosion.size},
+				.circle,
+				DEFAULT_UV,
+				color,
+			)
+		}
+
+		for p_i := len(game_data.explosions) - 1; p_i >= 0; p_i -= 1 {
+			if (!game_data.explosions[p_i].active) {
+				ordered_remove(&game_data.explosions, p_i)
+			}
+		}
+	}
 
 	{
 		// DEBUGGER TOOLS

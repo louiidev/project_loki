@@ -19,6 +19,7 @@ ImageId :: enum {
 	spawn_indicator,
 	level_bounds,
 	money,
+	circle,
 }
 
 Image_Column_Rows_Count := [ImageId][2]int {
@@ -30,6 +31,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.spawn_indicator = {1, 1},
 	.level_bounds    = {1, 1},
 	.money           = {1, 1},
+	.circle          = {1, 1},
 }
 
 
