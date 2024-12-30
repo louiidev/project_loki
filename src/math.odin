@@ -369,3 +369,11 @@ m4_inverse :: proc(m: mat4) -> mat4 {
 
 	return inv
 }
+
+
+hex_to_rgb :: proc(hex: int) -> Vector4 {
+	r := (hex >> 16) & 0xFF
+	g := (hex >> 8) & 0xFF
+	b := hex & 0xFF
+	return Vector4{f32(r) / 255.0, f32(g) / 255.0, f32(b) / 255.0, 1}
+}

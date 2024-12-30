@@ -2,7 +2,16 @@ package main
 
 
 Projectile :: struct {
-	using particle:            Particle,
+	position:                  Vector2,
+	active:                    bool,
+	velocity:                  Vector2,
+	rotation:                  f32,
+	sprite_cell_start:         Vector2Int,
+	animation_count:           int,
+	current_frame:             int,
+	current_animation_time:    f32,
+	time_per_frame:            f32,
+	scale:                     f32,
 	player_owned:              bool,
 	distance_limit:            f32,
 	current_distance_traveled: f32,

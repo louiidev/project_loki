@@ -130,7 +130,7 @@ WALLS: [4]Vector4 : {
 	{HALF_BOUNDS.x, -HALF_BOUNDS.y, 10, LEVEL_BOUNDS.y}, // right
 	{-HALF_BOUNDS.x, HALF_BOUNDS.y, LEVEL_BOUNDS.x, 10}, // up
 }
-DEBUG_HITBOXES :: true
+DEBUG_HITBOXES :: false
 DEBUG_NO_ENEMIES :: false
 
 
@@ -148,17 +148,6 @@ DEFAULT_ENT :: Entity {
 	collision_radius         = 4,
 }
 
-Particle :: struct {
-	position:               Vector2,
-	active:                 bool,
-	velocity:               Vector2,
-	rotation:               f32,
-	sprite_cell_start:      Vector2Int,
-	animation_count:        int,
-	current_frame:          int,
-	current_animation_time: f32,
-	time_per_frame:         f32,
-}
 
 XpPickup :: struct {
 	position:  Vector2,
@@ -199,7 +188,6 @@ game_data: GameRunState
 app_state: AppState = .GamePlay
 
 camera: Camera
-draw_hitboxes := false
 
 
 generate_new_shop_upgrades :: proc() {
@@ -377,16 +365,6 @@ create_entity :: proc(position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
 	return entity
 }
 
-spawn_projectile_particle :: proc(p: Projectile, sprite_cell_start_y: int) {
-	particle: Particle
-
-	particle.position = p.position
-	particle.sprite_cell_start = {0, sprite_cell_start_y}
-	particle.animation_count = 4
-	particle.time_per_frame = 0.025
-	particle.rotation = p.rotation
-	append(&game_data.particles, particle)
-}
 
 mouse_to_matrix :: proc() -> Vector2 {
 	// MOUSE TO WORLD
@@ -1030,7 +1008,11 @@ game_play :: proc() {
 							p.last_hit_ent_id = e.id
 						}
 						e.health -= p.damage_to_deal
-						spawn_projectile_particle(p, 1)
+
+						spawn_particles(p.position, hex_to_rgb(0xffed73))
+						if e.health <= 0 {
+							spawn_particles(e.position, COLOR_WHITE)
+						}
 						game_data.player.roll_stamina = math.min(
 							game_data.player.roll_stamina + ROLL_STAMINIA_ADD_ON_SHOT,
 							game_data.player.max_roll_stamina,
@@ -1072,6 +1054,7 @@ game_play :: proc() {
 		}
 
 
+		update_render_particles(dt)
 	}
 
 
