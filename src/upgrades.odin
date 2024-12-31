@@ -1,5 +1,7 @@
 package main
 
+import "core:math"
+
 Upgrade :: enum {
 	PIERCING_SHOT,
 	BOUNCE_SHOT,
@@ -7,9 +9,11 @@ Upgrade :: enum {
 	ROLL_SPEED,
 	ROLL_STAMINIA,
 	HEALTH,
+	HEALTH_2,
 	MAX_HEALTH,
 	AMMO_UPGRADE,
 	BULLETS,
+	EXPLODING_ENEMIES,
 }
 
 
@@ -21,6 +25,8 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Max Health +1"
 	case .HEALTH:
 		return "Health +1"
+	case .HEALTH_2:
+		return "Health +2"
 	case .PIERCING_SHOT:
 		return "Piecing Shot"
 	case .RELOAD_SPEED:
@@ -33,6 +39,8 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Ammo Upgrade"
 	case .BULLETS:
 		return "Bullets +1"
+	case .EXPLODING_ENEMIES:
+		return "Enemies Explode on Death"
 	}
 
 
@@ -46,6 +54,8 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return "Bounces off enemy after hit"
 	case .HEALTH:
 		return "Replenishes the players health by +1"
+	case .HEALTH_2:
+		return "Replenishes the players health by +2"
 	case .MAX_HEALTH:
 		return "Upgrades the players max health by +1"
 	case .PIERCING_SHOT:
@@ -60,8 +70,47 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return "Upgrades the ammo by 2+"
 	case .BULLETS:
 		return "Upgrades the amount of bullets you fire by 1+"
+
+	case .EXPLODING_ENEMIES:
+		return "5%+ chance an enemy explodes on death"
 	}
 
 
 	return "ERROR"
+}
+
+
+purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
+	shop_upgrade.purchased = true
+	game_data.money -= shop_upgrade.cost
+	assert(game_data.money >= 0)
+
+
+	game_data.player_upgrade[shop_upgrade.upgrade] += 1
+
+	#partial switch (shop_upgrade.upgrade) {
+	case .AMMO_UPGRADE:
+		game_data.max_bullets += 2
+	case .HEALTH:
+		game_data.player.health = math.min(
+			game_data.player.max_health,
+			game_data.player.health + 1,
+		)
+	case .MAX_HEALTH:
+		game_data.player.max_health += 1
+
+	case .HEALTH_2:
+		game_data.player.health = math.min(
+			game_data.player.max_health,
+			game_data.player.health + 2,
+		)
+
+	case .RELOAD_SPEED:
+		game_data.time_to_reload = math.max(
+			PLAYER_MIN_POSSIBLE_RELOAD_TIME,
+			game_data.time_to_reload - (game_data.time_to_reload * 0.05),
+		)
+	}
+
+
 }

@@ -59,7 +59,6 @@ Entity :: struct {
 	max_weapon_cooldown_time: f32,
 	i_frame_timer:            f32,
 	reload_timer:             f32,
-	time_to_reload:           f32,
 }
 
 
@@ -101,7 +100,8 @@ Camera :: struct {
 PLAYER_INITIAL_BULLETS :: 6
 PLAYER_INITIAL_BULLET_SPREAD: f32 : 12.0
 PLAYER_INITIAL_RELOAD_TIME :: 1.0
-PLAYER_INITIAL_BULLET_VELOCITY :: 150.0
+PLAYER_MIN_POSSIBLE_RELOAD_TIME :: 0.1
+PLAYER_INITIAL_BULLET_VELOCITY :: 280.0
 PLAYER_INITIAL_FIRE_RATE :: 0.2
 PLAYER_INITIAL_PICKUP_RADIUS :: 19
 PLAYER_WALK_SPEED :: 50
@@ -153,7 +153,6 @@ DEFAULT_ENT :: Entity {
 	max_weapon_cooldown_time = PLAYER_INITIAL_FIRE_RATE,
 	health                   = 2,
 	max_health               = 2.,
-	time_to_reload           = PLAYER_INITIAL_RELOAD_TIME,
 	collision_radius         = 4,
 }
 
@@ -197,6 +196,8 @@ GameRunState :: struct {
 	money_pickup_radius:   f32,
 	bullet_velocity:       f32,
 	bullet_spread:         f32,
+	time_to_reload:        f32,
+
 
 	// camera shake
 	shake_amount:          f32,
@@ -209,6 +210,31 @@ game_data: GameRunState
 app_state: AppState = .GamePlay
 
 camera: Camera
+
+
+restart_run :: proc() {
+	// eventually Ill put in a fade out
+
+	cleanup_scene()
+
+
+	setup_run()
+}
+
+
+setup_run :: proc() {
+	game_data = {}
+	game_data.player = create_entity()
+	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
+	game_data.max_bullets = PLAYER_INITIAL_BULLETS
+	game_data.current_wave = 1
+	game_data.time_left_in_wave = INITIAL_WAVE_TIME
+	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
+	game_data.money_pickup_radius = PLAYER_INITIAL_PICKUP_RADIUS
+	game_data.bullet_velocity = PLAYER_INITIAL_BULLET_VELOCITY
+	game_data.bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
+	game_data.time_to_reload = PLAYER_INITIAL_RELOAD_TIME
+}
 
 
 generate_new_shop_upgrades :: proc() {
@@ -234,15 +260,8 @@ init :: proc "c" () {
 	gfx_init()
 	init_images()
 
-	game_data.player = create_entity()
-	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
-	game_data.max_bullets = PLAYER_INITIAL_BULLETS
-	game_data.current_wave = 1
-	game_data.time_left_in_wave = INITIAL_WAVE_TIME
-	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
-	game_data.money_pickup_radius = PLAYER_INITIAL_PICKUP_RADIUS
-	game_data.bullet_velocity = PLAYER_INITIAL_BULLET_VELOCITY
-	game_data.bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
+	setup_run()
+
 }
 
 
@@ -339,22 +358,6 @@ knockback_logic_update :: proc(
 
 }
 
-
-purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
-	shop_upgrade.purchased = true
-	game_data.money -= shop_upgrade.cost
-	assert(game_data.money >= 0)
-
-
-	game_data.player_upgrade[shop_upgrade.upgrade] += 1
-
-	#partial switch (shop_upgrade.upgrade) {
-	case .AMMO_UPGRADE:
-		game_data.max_bullets += 2
-	}
-
-
-}
 
 update_player_animations :: proc(ent: ^Entity, dt: f32) {
 
@@ -485,6 +488,22 @@ ENEMY_SPAWN_TIMER_MIN :: 2
 ENEMY_SPAWN_TIMER_MAX :: 6
 
 
+cleanup_scene :: proc() {
+	for &e in game_data.enemies {
+		e.active = false
+		spawn_particles(e.position)
+	}
+	for &xp in game_data.money_pickups {
+		xp.active = false
+	}
+	for &p in game_data.projectiles {
+		p.active = false
+
+		spawn_particles(p.position)
+	}
+}
+
+
 GAMEPLAY_CLEAR_COLOR: sg.Color : {0.89, 0.7, 0.3, 1.0}
 game_play :: proc() {
 	clear_color = GAMEPLAY_CLEAR_COLOR
@@ -515,15 +534,7 @@ game_play :: proc() {
 			game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
 			game_data.ui_state = .upgrade_menu
 			generate_new_shop_upgrades()
-			for &e in game_data.enemies {
-				e.active = false
-			}
-			for &xp in game_data.money_pickups {
-				xp.active = false
-			}
-			for &p in game_data.projectiles {
-				p.active = false
-			}
+			cleanup_scene()
 		}
 
 
@@ -785,7 +796,7 @@ game_play :: proc() {
 			}
 
 			if game_data.current_bullets_count <= 0 {
-				player.reload_timer = player.time_to_reload
+				player.reload_timer = game_data.time_to_reload
 			}
 
 			if player.animation_state == .ROLLING {
@@ -905,7 +916,7 @@ game_play :: proc() {
 		)
 
 		if game_data.current_bullets_count == 0 && player.reload_timer > 0 {
-			t_normalized := 1.0 - (player.reload_timer / player.time_to_reload)
+			t_normalized := 1.0 - (player.reload_timer / game_data.time_to_reload)
 			min: f32 = -6.3
 			max: f32 = 6.3
 			x: f32 = math.lerp(min, max, t_normalized)
@@ -1191,21 +1202,6 @@ game_play :: proc() {
 
 	mouse_ui_pos := mouse_to_matrix()
 
-	// {
-	// 	// XP bar
-	// 	half_height := pixel_height / 2.0
-
-	// 	draw_status_bar(
-	// 		{0.0, half_height - 10},
-	// 		Vector4{0.0, 0.0, 1.0, 1.0},
-	// 		auto_cast game_data.current_xp,
-	// 		auto_cast game_data.to_next_level_xp,
-	// 		100,
-	// 		5,
-	// 		1,
-	// 	)
-	// }
-
 
 	{
 		set_ui_projection_alignment(.bottom_center)
@@ -1303,7 +1299,15 @@ game_play :: proc() {
 			}
 
 			button_pos_y -= button_margin + button_size.y
-			bordered_button({0, button_pos_y}, button_size, "Restart run", button_font_size, 0)
+			if bordered_button(
+				{0, button_pos_y},
+				button_size,
+				"Restart run",
+				button_font_size,
+				0,
+			) {
+				restart_run()
+			}
 			button_pos_y -= button_margin + button_size.y
 			bordered_button({0, button_pos_y}, button_size, "Options", button_font_size, 0)
 			button_pos_y -= button_margin + button_size.y

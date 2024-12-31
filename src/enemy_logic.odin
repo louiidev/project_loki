@@ -167,7 +167,7 @@ create_bat :: proc(position: Vector2) -> Enemy {
 	enemy.entity = create_entity()
 	enemy.position = position
 	enemy.type = .BAT
-	enemy.speed = 20
+	enemy.speed = 28
 	enemy.weapon_cooldown_timer = 10
 	enemy.id = last_id
 	return enemy
@@ -188,7 +188,7 @@ create_bull :: proc(position: Vector2) -> Enemy {
 	enemy.entity = create_entity()
 	enemy.position = position
 	enemy.type = .BULL
-	enemy.speed = 20
+	enemy.speed = 18
 	enemy.id = last_id
 	return enemy
 }
@@ -198,7 +198,7 @@ create_cactus :: proc(position: Vector2) -> Enemy {
 	enemy.entity = create_entity()
 	enemy.position = position
 	enemy.type = .CACTUS
-	enemy.speed = 20
+	enemy.speed = 0
 	enemy.id = last_id
 	return enemy
 }
