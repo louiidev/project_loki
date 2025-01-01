@@ -4,6 +4,7 @@ package main
 import fcore "../fmod/core"
 import fsbank "../fmod/fsbank"
 import fstudio "../fmod/studio"
+import "core:fmt"
 
 
 SoundState :: struct {
