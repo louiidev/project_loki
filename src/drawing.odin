@@ -10,7 +10,7 @@ import stbi "vendor:stb/image"
 import stbrp "vendor:stb/rect_pack"
 import stbtt "vendor:stb/truetype"
 
-MAX_QUADS :: 8000
+MAX_QUADS :: 800
 
 state: struct {
 	pass_action: sg.Pass_Action,
@@ -325,6 +325,19 @@ draw_frame_reset :: proc(frame: ^DrawFrame) {
 	frame.camera_xform = Matrix4(1)
 }
 
+
+set_ortho_projection :: proc(zoom: f32) {
+
+	using runtime, linalg
+	draw_frame.projection = matrix_ortho3d_f32(
+		pixel_width * -0.5 / zoom,
+		pixel_width * 0.5 / zoom,
+		pixel_height * -0.5 / zoom,
+		pixel_height * 0.5 / zoom,
+		-1,
+		1,
+	)
+}
 
 Alignment :: enum {
 	bottom_left,

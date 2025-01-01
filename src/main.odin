@@ -71,6 +71,7 @@ GameUIState :: enum {
 	none,
 	pause_menu,
 	upgrade_menu,
+	player_death,
 }
 
 Enemy :: struct {
@@ -125,6 +126,8 @@ ROLLING_ANIMATION_FRAMES :: 4
 PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
 
 UPGRADE_TIMER_SHOW_TIME :: 0.9
+TIMER_TO_SHOW_DEATH_UI: f32 : 2.0
+TIMER_TO_SHOW_DEATH_ANIMATION: f32 : 0.3
 STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
@@ -173,37 +176,40 @@ MoneyPickup :: struct {
 }
 
 GameRunState :: struct {
-	enemies:               [dynamic]Enemy,
-	projectiles:           [dynamic]Projectile,
-	particles:             [dynamic]Particle,
-	player:                Entity,
-	money_pickups:         [dynamic]MoneyPickup,
-	enemy_spawn_timer:     f32,
-	money:                 int,
+	enemies:                              [dynamic]Enemy,
+	projectiles:                          [dynamic]Projectile,
+	particles:                            [dynamic]Particle,
+	player:                               Entity,
+	money_pickups:                        [dynamic]MoneyPickup,
+	enemy_spawn_timer:                    f32,
+	money:                                int,
 
 	// waves
-	current_wave:          int,
-	time_left_in_wave:     f32,
-
+	current_wave:                         int,
+	time_left_in_wave:                    f32,
+	timer_to_show_player_death_ui:        f32,
+	timer_to_show_player_death_animation: f32,
 
 	// upgrades
-	slowdown_multiplier:   f32,
-	timer_to_show_upgrade: f32,
-	next_upgrades:         [3]ShopUpgrade,
-	player_upgrade:        [Upgrade]int,
-	max_bullets:           int,
-	current_bullets_count: int,
-	money_pickup_radius:   f32,
-	bullet_velocity:       f32,
-	bullet_spread:         f32,
-	time_to_reload:        f32,
+	slowdown_multiplier:                  f32,
+	timer_to_show_upgrade:                f32,
+	next_upgrades:                        [3]ShopUpgrade,
+	player_upgrade:                       [Upgrade]int,
+	max_bullets:                          int,
+	current_bullets_count:                int,
+	money_pickup_radius:                  f32,
+	bullet_velocity:                      f32,
+	bullet_spread:                        f32,
+	time_to_reload:                       f32,
 
 
 	// camera shake
-	shake_amount:          f32,
-	ui_state:              GameUIState,
-	world_time_elapsed:    f32,
-	explosions:            [dynamic]Explosion,
+	camera_zoom:                          f32,
+	shake_amount:                         f32,
+	ui_state:                             GameUIState,
+	timers:                               [dynamic]Timer,
+	world_time_elapsed:                   f32,
+	explosions:                           [dynamic]Explosion,
 }
 
 game_data: GameRunState
@@ -234,6 +240,7 @@ setup_run :: proc() {
 	game_data.bullet_velocity = PLAYER_INITIAL_BULLET_VELOCITY
 	game_data.bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
 	game_data.time_to_reload = PLAYER_INITIAL_RELOAD_TIME
+	game_data.camera_zoom = 1.0
 }
 
 
@@ -327,7 +334,8 @@ damage_player :: proc(damage_amount: int) {
 		player.i_frame_timer = PLAYER_I_FRAME_TIMEOUT_AMOUNT
 
 		if player.health <= 0 {
-			player.active = false
+			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_UI
+			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_ANIMATION
 		}
 	}
 }
@@ -510,6 +518,7 @@ game_play :: proc() {
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
 	defer game_data.world_time_elapsed += dt
 	app_dt: f32 = dt
+	particle_dt: f32 = dt
 
 
 	if game_data.ui_state != .none {
@@ -524,9 +533,31 @@ game_play :: proc() {
 	game_data.time_left_in_wave = math.max(0, game_data.time_left_in_wave - dt)
 	game_data.enemy_spawn_timer -= dt
 
+	if game_data.timer_to_show_player_death_ui > 0 {
+		game_data.timer_to_show_player_death_ui -= app_dt
+		game_data.timer_to_show_player_death_animation -= app_dt
+		dt = math.lerp(
+			dt,
+			0.0,
+			1 - game_data.timer_to_show_player_death_animation / TIMER_TO_SHOW_DEATH_ANIMATION,
+		)
+
+		game_data.camera_zoom = math.lerp(game_data.camera_zoom, 1.3, app_dt)
+
+		if game_data.timer_to_show_player_death_ui <= 0 {
+			game_data.ui_state = .player_death
+		}
+
+		if game_data.timer_to_show_player_death_animation <= 0 {
+
+			game_data.player.active = false
+			spawn_particles(game_data.player.position)
+			game_data.timer_to_show_player_death_animation =
+				TIMER_TO_SHOW_DEATH_ANIMATION + TIMER_TO_SHOW_DEATH_UI
+		}
+	}
 
 	if game_data.time_left_in_wave <= 0 && game_data.ui_state == .none {
-
 		dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
 
 		game_data.timer_to_show_upgrade = math.max(game_data.timer_to_show_upgrade - app_dt, 0.0)
@@ -613,7 +644,7 @@ game_play :: proc() {
 	}
 
 	draw_frame.camera_xform = translate_mat4(Vector3{-camera.position.x, -camera.position.y, 0})
-
+	set_ortho_projection(game_data.camera_zoom)
 
 	mouse_world_position = mouse_to_matrix()
 
@@ -666,12 +697,13 @@ game_play :: proc() {
 	if game_data.ui_state == .none {
 		// XP pickups
 		for &money in &game_data.money_pickups {
-			if circles_overlap(
-				money.position,
-				game_data.money_pickup_radius,
-				game_data.player.position,
-				game_data.player.collision_radius,
-			) {
+			if !money.picked_up &&
+			   circles_overlap(
+				   money.position,
+				   game_data.money_pickup_radius,
+				   game_data.player.position,
+				   game_data.player.collision_radius,
+			   ) {
 				// xp.active = false
 				money.picked_up = true
 				game_data.money += 1
@@ -852,82 +884,84 @@ game_play :: proc() {
 		if player.i_frame_timer > 0 {
 			flash_amount = 1
 		}
-		draw_quad_center_xform(
-			xform,
-			{auto_cast 16, auto_cast 16},
-			.player,
-			uvs,
-			COLOR_WHITE,
-			flash_amount,
-		)
 
 
-		weapon_rotation_angle := calc_rotation_to_target(mouse_world_position, player.position)
+		if player.active {
+			draw_quad_center_xform(
+				xform,
+				{auto_cast 16, auto_cast 16},
+				.player,
+				uvs,
+				COLOR_WHITE,
+				flash_amount,
+			)
+
+			weapon_rotation_angle := calc_rotation_to_target(mouse_world_position, player.position)
+
+			xform =
+				linalg.matrix4_translate_f32(
+					{game_data.player.position.x, game_data.player.position.y, 0.0},
+				) *
+				linalg.matrix4_rotate(weapon_rotation_angle, Vector3{0, 0, 1}) *
+				linalg.matrix4_translate_f32({-5, -12, 0.0})
+			weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
+			draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
+			draw_status_bar(
+				game_data.player.position + {0.0, -12},
+				{1, 0, 0, 1},
+				auto_cast game_data.player.health,
+				auto_cast game_data.player.max_health,
+			)
+
+			draw_status_bar(
+				game_data.player.position + {0.0, -14},
+				{0, 0, 1, 1},
+				player.roll_stamina,
+				player.max_roll_stamina,
+			)
 
 
-		xform =
-			linalg.matrix4_translate_f32(
-				{game_data.player.position.x, game_data.player.position.y, 0.0},
-			) *
-			linalg.matrix4_rotate(weapon_rotation_angle, Vector3{0, 0, 1}) *
-			linalg.matrix4_translate_f32({-5, -12, 0.0})
-		weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
-		draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
-		draw_status_bar(
-			game_data.player.position + {0.0, -12},
-			{1, 0, 0, 1},
-			auto_cast game_data.player.health,
-			auto_cast game_data.player.max_health,
-		)
-
-		draw_status_bar(
-			game_data.player.position + {0.0, -14},
-			{0, 0, 1, 1},
-			player.roll_stamina,
-			player.max_roll_stamina,
-		)
-
-
-		// line
-		draw_rect_bordered_center_xform(
-			translate_mat4(extend(game_data.player.position + {0.0, 14})),
-			{12, 0.5},
-			1,
-			COLOR_WHITE,
-			{0.1, 0.1, 0.1, 1},
-		)
-
-		// left
-		draw_rect_bordered_center_xform(
-			translate_mat4(extend(game_data.player.position + {-6.3, 14})),
-			{0.5, 2.5},
-			1,
-			COLOR_WHITE,
-			{0.1, 0.1, 0.1, 1},
-		)
-
-		// right
-		draw_rect_bordered_center_xform(
-			translate_mat4(extend(game_data.player.position + {6.3, 14})),
-			{0.5, 2.5},
-			1,
-			COLOR_WHITE,
-			{0.1, 0.1, 0.1, 1},
-		)
-
-		if game_data.current_bullets_count == 0 && player.reload_timer > 0 {
-			t_normalized := 1.0 - (player.reload_timer / game_data.time_to_reload)
-			min: f32 = -6.3
-			max: f32 = 6.3
-			x: f32 = math.lerp(min, max, t_normalized)
-
+			// line
 			draw_rect_bordered_center_xform(
-				translate_mat4(extend(game_data.player.position + {x, 14})),
+				translate_mat4(extend(game_data.player.position + {0.0, 14})),
+				{12, 0.5},
+				1,
+				COLOR_WHITE,
+				{0.1, 0.1, 0.1, 1},
+			)
+
+			// left
+			draw_rect_bordered_center_xform(
+				translate_mat4(extend(game_data.player.position + {-6.3, 14})),
 				{0.5, 2.5},
 				1,
 				COLOR_WHITE,
 				{0.1, 0.1, 0.1, 1},
 			)
+
+			// right
+			draw_rect_bordered_center_xform(
+				translate_mat4(extend(game_data.player.position + {6.3, 14})),
+				{0.5, 2.5},
+				1,
+				COLOR_WHITE,
+				{0.1, 0.1, 0.1, 1},
+			)
+
+			if game_data.current_bullets_count == 0 && player.reload_timer > 0 {
+				t_normalized := 1.0 - (player.reload_timer / game_data.time_to_reload)
+				min: f32 = -6.3
+				max: f32 = 6.3
+				x: f32 = math.lerp(min, max, t_normalized)
+
+				draw_rect_bordered_center_xform(
+					translate_mat4(extend(game_data.player.position + {x, 14})),
+					{0.5, 2.5},
+					1,
+					COLOR_WHITE,
+					{0.1, 0.1, 0.1, 1},
+				)
+			}
 		}
 	}
 
@@ -1124,7 +1158,7 @@ game_play :: proc() {
 		}
 
 
-		update_render_particles(dt)
+		update_render_particles(particle_dt)
 	}
 
 
@@ -1315,6 +1349,20 @@ game_play :: proc() {
 			if bordered_button({0, button_pos_y}, button_size, "Exit", button_font_size, 1) {
 				sapp.quit()
 			}
+		}
+
+
+		if game_data.ui_state == .player_death {
+			// draw_rect_bordered_center_xform(
+			// 	transform_2d(V2_ZERO),
+			// 	{400, 500},
+			// 	10,
+			// 	COLOR_WHITE,
+			// 	{0.4, 0.4, 0.4, 1},
+			// )
+			//
+			draw_text_center_center({0, 100}, "PLAYER DEAD", 48)
+			draw_text_center_center({0, 50}, "GAME OVER", 48)
 		}
 
 	}
