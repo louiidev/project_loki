@@ -84,7 +84,7 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 	shop_upgrade.purchased = true
 	game_data.money -= shop_upgrade.cost
 	assert(game_data.money >= 0)
-
+	log(game_data.money, shop_upgrade.cost)
 
 	game_data.player_upgrade[shop_upgrade.upgrade] += 1
 

@@ -6,11 +6,12 @@ import "base:runtime"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
+import "core:strings"
 import stbi "vendor:stb/image"
 import stbrp "vendor:stb/rect_pack"
 import stbtt "vendor:stb/truetype"
 
-MAX_QUADS :: 800
+MAX_QUADS :: 8192
 
 state: struct {
 	pass_action: sg.Pass_Action,
@@ -57,7 +58,6 @@ DrawQuad :: struct {
 DrawFrame :: struct {
 	projection:       Matrix4,
 	camera_xform:     Matrix4,
-	textures:         [MAX_QUADS]sg.Image,
 	quads:            [MAX_QUADS]Quad,
 	quad_count:       int,
 	shader_extension: sg.Pipeline,
@@ -452,9 +452,7 @@ draw_text :: proc(
 	y: f32
 
 	scale: f32 = font_size / f32(DEFAULT_FONT_SIZE)
-	if font_size > 50 {
-		fmt.println(scale)
-	}
+
 
 	for char in text {
 
@@ -498,4 +496,47 @@ draw_text :: proc(
 		y += -advance_y
 	}
 
+}
+
+
+draw_text_constrainted_center :: proc(
+	center_pos: Vector2,
+	text: string,
+	box_width: f32,
+	font_size: f32 = DEFAULT_FONT_SIZE,
+	col := COLOR_WHITE,
+) -> f32 {
+
+	overall_height: f32 = 0.0
+	current_width: f32 = 0.0
+	new_draw_pos_y := center_pos.y
+	spacing_y := font_size * 0.25
+	str_arr := strings.split(text, " ", context.temp_allocator)
+
+	temp_str_buffer: [dynamic]string
+	for str in str_arr {
+		width := measure_text(str, font_size).x
+		if current_width + width > box_width {
+			assert(len(temp_str_buffer) > 0)
+			str := strings.join(temp_str_buffer[:], " ", context.temp_allocator)
+			draw_text_center({center_pos.x, new_draw_pos_y}, str, font_size, col)
+			remove_range(&temp_str_buffer, 0, len(temp_str_buffer))
+			height := measure_text(str, font_size).y
+			new_draw_pos_y -= height + spacing_y
+			overall_height += height
+			current_width = 0
+		}
+
+		current_width += width
+		append(&temp_str_buffer, str)
+	}
+
+	if len(temp_str_buffer) > 0 {
+		str := strings.join(temp_str_buffer[:], " ", context.temp_allocator)
+		height := measure_text(str, font_size).y
+		overall_height += height
+		draw_text_center({center_pos.x, new_draw_pos_y}, str, font_size, col)
+	}
+
+	return overall_height
 }

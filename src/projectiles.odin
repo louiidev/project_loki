@@ -22,13 +22,20 @@ Projectile :: struct {
 }
 
 
-create_player_projectile :: proc(position: Vector2, direction: Vector2, rotation: f32, last_hit_id:u32 = 0, hits:int = 0, bounce_count: int = 0)  {
-    projectile: Projectile
+create_player_projectile :: proc(
+	position: Vector2,
+	direction: Vector2,
+	rotation: f32,
+	last_hit_id: u32 = 0,
+	hits: int = 0,
+	bounce_count: int = 0,
+) {
+	projectile: Projectile
 	projectile.animation_count = 2
 	projectile.time_per_frame = 0.05
 	projectile.position = position
 	projectile.active = true
-	projectile.distance_limit = 250
+	projectile.distance_limit = game_data.bullet_range
 	projectile.sprite_cell_start = {0, 1}
 	projectile.rotation = rotation
 	projectile.velocity = direction * game_data.bullet_velocity

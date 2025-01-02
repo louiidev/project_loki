@@ -2,6 +2,70 @@ package main
 
 import "core:math"
 import "core:math/linalg"
+import "core:math/rand"
+
+
+Enemy :: struct {
+	using entity:          Entity,
+	type:                  EnemyType,
+	spawn_indicator_timer: f32,
+	flip_x:                bool,
+
+
+	// bull_attack_data
+	attack_direction:      Vector2,
+	charge_up_time:        f32,
+	charge_distance:       f32,
+}
+
+EnemyType :: enum {
+	BAT,
+	CRAWLER,
+	BULL,
+	CACTUS,
+}
+
+
+create_bat :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .BAT
+	enemy.speed = 28
+	enemy.weapon_cooldown_timer = 10
+	enemy.id = last_id
+	return enemy
+}
+
+create_crawler :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .CRAWLER
+	enemy.speed = 20
+	enemy.id = last_id
+	return enemy
+}
+
+create_bull :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .BULL
+	enemy.speed = 18
+	enemy.id = last_id
+	return enemy
+}
+
+create_cactus :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .CACTUS
+	enemy.speed = 0
+	enemy.id = last_id
+	return enemy
+}
 
 
 move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
@@ -162,43 +226,107 @@ cactus_update_logic :: proc(entity: ^Entity, dt: f32) {
 	}
 }
 
-create_bat :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
-	enemy.type = .BAT
-	enemy.speed = 28
-	enemy.weapon_cooldown_timer = 10
-	enemy.id = last_id
-	return enemy
+get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
+	switch (enemy_type) {
+	case .CRAWLER:
+		return 1
+	case .BAT:
+		return 2
+	case .BULL:
+		return 4
+	case .CACTUS:
+		return 1
+	}
+
+	return 0
 }
 
-create_crawler :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
-	enemy.type = .CRAWLER
-	enemy.speed = 20
-	enemy.id = last_id
-	return enemy
+get_base_propability :: proc(enemy_type: EnemyType) -> f32 {
+	switch (enemy_type) {
+	case .CRAWLER:
+		return 0.7
+	case .BAT:
+		return 0.4
+	case .BULL:
+		return 0.1
+	case .CACTUS:
+		return 0.1
+	}
+
+	return 0
+
+
 }
 
-create_bull :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
-	enemy.type = .BULL
-	enemy.speed = 18
-	enemy.id = last_id
-	return enemy
+decrease_rate: f32 : 0.05
+increase_rate: f32 : 0.05
+get_spawn_probabilities :: proc() -> [EnemyType]f32 {
+	probabilities: [EnemyType]f32
+	wave_number := game_data.current_wave
+	for type in EnemyType {
+		base_prob := get_base_propability(type)
+		if type == .CACTUS {
+			probabilities[type] = base_prob
+			continue
+		}
+		if base_prob > 0.45 {
+			probabilities[type] = math.max(
+				base_prob - (auto_cast wave_number * decrease_rate),
+				0.1,
+			)
+		} else {
+			probabilities[type] = math.min(
+				base_prob + (auto_cast wave_number * increase_rate),
+				0.65,
+			)
+		}
+	}
+
+	return probabilities
 }
 
-create_cactus :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
-	enemy.type = .CACTUS
-	enemy.speed = 0
-	enemy.id = last_id
-	return enemy
+
+spawn_enemy_group :: proc(amount_to_spawn: int) {
+
+	spawn_bag: [dynamic]EnemyType
+	defer delete(spawn_bag)
+
+	probabilities := get_spawn_probabilities()
+
+	for type in EnemyType {
+		if game_data.current_wave < get_min_wave_for_enemy_spawn(type) {
+			continue
+		}
+
+		prob := int(probabilities[type] * 1000)
+
+		for i := 0; i < prob; i += 1 {
+			append(&spawn_bag, type)
+		}
+
+
+	}
+
+
+	for i := 0; i < amount_to_spawn; i += 1 {
+		spawn_bag_index := rand.int_max(len(spawn_bag))
+		enemy_type := spawn_bag[spawn_bag_index]
+		position: Vector2 = {
+			rand.float32_range(-LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.x * 0.5),
+			rand.float32_range(-LEVEL_BOUNDS.y * 0.5, LEVEL_BOUNDS.y * 0.5),
+		}
+		switch (enemy_type) {
+		case .BAT:
+			append(&game_data.enemies, create_bat(position))
+		case .CRAWLER:
+			append(&game_data.enemies, create_crawler(position))
+		case .BULL:
+			append(&game_data.enemies, create_bull(position))
+		case .CACTUS:
+			append(&game_data.enemies, create_cactus(position))
+		}
+
+		game_data.enemies[len(game_data.enemies) - 1].spawn_indicator_timer = SPAWN_INDICATOR_TIME
+		unordered_remove(&spawn_bag, spawn_bag_index)
+	}
 }

@@ -21,12 +21,6 @@ import t "core:time"
 
 log :: fmt.println
 
-EnemyType :: enum {
-	BAT,
-	CRAWLER,
-	BULL,
-	CACTUS,
-}
 
 AnimationState :: enum {
 	IDLE,
@@ -74,17 +68,6 @@ GameUIState :: enum {
 	player_death,
 }
 
-Enemy :: struct {
-	using entity:          Entity,
-	type:                  EnemyType,
-
-	// bull_attack_data
-	attack_direction:      Vector2,
-	charge_up_time:        f32,
-	charge_distance:       f32,
-	spawn_indicator_timer: f32,
-}
-
 
 ShopUpgrade :: struct {
 	upgrade:   Upgrade,
@@ -99,6 +82,7 @@ Camera :: struct {
 
 // UPGRADES INITIAL VALUES
 PLAYER_INITIAL_BULLETS :: 6
+PLAYER_INITIAL_BULLET_RANGE: f32 : 100
 PLAYER_INITIAL_BULLET_SPREAD: f32 : 12.0
 PLAYER_INITIAL_RELOAD_TIME :: 1.0
 PLAYER_MIN_POSSIBLE_RELOAD_TIME :: 0.1
@@ -117,6 +101,7 @@ CRAWLER_ATTACK_TIME :: 10
 BAT_ATTACK_TIME :: 10
 PLAYER_KNOCKBACK_VELOCITY :: 120
 
+REROLL_COST_MODIFIER :: 2
 
 WALK_ANIMATION_TIME :: 0.08
 WALK_ANIMATION_FRAMES :: 6
@@ -189,6 +174,7 @@ GameRunState :: struct {
 	time_left_in_wave:                    f32,
 	timer_to_show_player_death_ui:        f32,
 	timer_to_show_player_death_animation: f32,
+	reroll_cost:                          int,
 
 	// upgrades
 	slowdown_multiplier:                  f32,
@@ -200,6 +186,7 @@ GameRunState :: struct {
 	money_pickup_radius:                  f32,
 	bullet_velocity:                      f32,
 	bullet_spread:                        f32,
+	bullet_range:                         f32,
 	time_to_reload:                       f32,
 
 
@@ -233,6 +220,7 @@ setup_run :: proc() {
 	game_data.player = create_entity()
 	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
 	game_data.max_bullets = PLAYER_INITIAL_BULLETS
+	game_data.bullet_range = PLAYER_INITIAL_BULLET_RANGE
 	game_data.current_wave = 1
 	game_data.time_left_in_wave = INITIAL_WAVE_TIME
 	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
@@ -526,7 +514,11 @@ game_play :: proc() {
 	}
 
 	if inputs.button_just_pressed[sapp.Keycode.ESCAPE] {
-		game_data.ui_state = game_data.ui_state == .none ? .pause_menu : .none
+		if game_data.ui_state == .pause_menu {
+			game_data.ui_state = .none
+		} else if game_data.ui_state == .none {
+			game_data.ui_state = .pause_menu
+		}
 	}
 
 
@@ -539,7 +531,7 @@ game_play :: proc() {
 		dt = math.lerp(
 			dt,
 			0.0,
-			1 - game_data.timer_to_show_player_death_animation / TIMER_TO_SHOW_DEATH_ANIMATION,
+			game_data.timer_to_show_player_death_animation / TIMER_TO_SHOW_DEATH_ANIMATION,
 		)
 
 		game_data.camera_zoom = math.lerp(game_data.camera_zoom, 1.3, app_dt)
@@ -577,31 +569,10 @@ game_play :: proc() {
 			ENEMY_SPAWN_TIMER_MAX,
 		)
 
-		amount_to_spawn: int = rand.int_max(10) + 1
-
 
 		if game_data.time_left_in_wave > SPAWN_INDICATOR_TIME + 0.5 {
-			for i := 0; i < amount_to_spawn; i += 1 {
-				enemy_type: EnemyType = auto_cast rand.int31_max(len(EnemyType))
-
-				position: Vector2 = {
-					rand.float32_range(-LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.x * 0.5),
-					rand.float32_range(-LEVEL_BOUNDS.y * 0.5, LEVEL_BOUNDS.y * 0.5),
-				}
-				switch (enemy_type) {
-				case .BAT:
-					append(&game_data.enemies, create_bat(position))
-				case .CRAWLER:
-					append(&game_data.enemies, create_crawler(position))
-				case .BULL:
-					append(&game_data.enemies, create_bull(position))
-				case .CACTUS:
-					append(&game_data.enemies, create_cactus(position))
-				}
-
-				game_data.enemies[len(game_data.enemies) - 1].spawn_indicator_timer =
-					SPAWN_INDICATOR_TIME
-			}
+			amount_to_spawn: int = rand.int_max(10) + 1
+			spawn_enemy_group(amount_to_spawn)
 		}
 
 
@@ -808,7 +779,7 @@ game_play :: proc() {
 		   player.reload_timer <= 0 {
 
 			spread := game_data.bullet_spread + auto_cast game_data.player_upgrade[.BULLETS]
-			camera_shake(0.7)
+			camera_shake(0.45)
 			for i := 0; i <= game_data.player_upgrade[.BULLETS]; i += 1 {
 				if game_data.current_bullets_count > 0 {
 					game_data.current_bullets_count -= 1
@@ -898,12 +869,26 @@ game_play :: proc() {
 
 			weapon_rotation_angle := calc_rotation_to_target(mouse_world_position, player.position)
 
-			xform =
-				linalg.matrix4_translate_f32(
-					{game_data.player.position.x, game_data.player.position.y, 0.0},
-				) *
+
+			flip_x := mouse_world_position.x < game_data.player.position.x
+
+
+			xform = linalg.matrix4_translate_f32(
+				{game_data.player.position.x, game_data.player.position.y, 0.0},
+			)
+
+			if flip_x {
+				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
+				weapon_rotation_angle = -calc_rotation_to_target(
+					player.position,
+					mouse_world_position,
+				)
+			}
+
+			xform *=
 				linalg.matrix4_rotate(weapon_rotation_angle, Vector3{0, 0, 1}) *
 				linalg.matrix4_translate_f32({-5, -12, 0.0})
+
 			weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
 			draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
 			draw_status_bar(
@@ -988,9 +973,11 @@ game_play :: proc() {
 
 				continue
 			}
-			flip_x := enemy.position.x > game_data.player.position.x
-			if enemy.type == .CACTUS || enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
-				flip_x = false
+			if game_data.player.active &&
+			   game_data.timer_to_show_player_death_animation <= 0 &&
+			   enemy.type != .CACTUS &&
+			   enemy.attack_direction == V2_ZERO {
+				enemy.flip_x = enemy.position.x > game_data.player.position.x
 			}
 
 
@@ -1008,7 +995,7 @@ game_play :: proc() {
 
 			// RENDER ENEMIES
 			xform := linalg.matrix4_translate_f32({enemy.position.x, enemy.position.y, 0.0})
-			if flip_x {
+			if enemy.flip_x {
 				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
 			}
 			sprite_y_index: int = auto_cast enemy.type
@@ -1254,51 +1241,51 @@ game_play :: proc() {
 
 		set_ui_projection_alignment(.center_center)
 		mouse_world_position = mouse_to_matrix()
+		game_data.ui_state = .upgrade_menu
 		// UPGRADE MENU
 		if game_data.ui_state == .upgrade_menu {
 
-			box_width: f32 = 180
-			box_height: f32 = 250
+			box_width: f32 = 250
+			box_height: f32 = 350
 			padding: f32 = 20
 			xform := transform_2d({-box_width - padding, 0.0})
 			position: Vector2 = {-box_width - padding, 0.0}
 
-			if bordered_button({-75, -box_height - 25}, {100, 50}, "Reroll shop", 20, 1) {
-				generate_new_shop_upgrades()
-			}
-			if bordered_button({75, -box_height - 25}, {100, 50}, "Next Wave", 20, 2) {
-				game_data.current_wave += 1
-				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
-				game_data.ui_state = .none
-			}
+			button_height: f32 = 60
+			button_width: f32 = 150
+
 
 			for i := 0; i < len(game_data.next_upgrades); i += 1 {
-				color := COLOR_WHITE
+				color := COLOR_WHITE - {0.2, 0.2, 0.2, 0.0}
 
-				draw_rect_center_xform(xform, {box_width, box_height}, color)
+				draw_rect_bordered_center_xform(xform, {box_width, box_height}, 10.0, color)
 				heading := get_upgrade_heading(game_data.next_upgrades[i].upgrade)
 				description := get_upgrade_description(game_data.next_upgrades[i].upgrade)
 
-				draw_text_center(
-					position - {0.0, -box_height * 0.5 + 40 + 10},
+
+				heading_pos := position - {0.0, -box_height * 0.5 + 40 + 10}
+				heading_height := draw_text_constrainted_center(
+					heading_pos,
 					heading,
-					36,
+					box_width - 50,
+					30,
 					{0, 0, 0, 1},
 				)
 
-				draw_text_center(
-					position - {0.0, -box_height * 0.5 + 100},
+				draw_text_constrainted_center(
+					heading_pos - {0, heading_height + 14},
 					description,
-					24,
+					box_width - 50,
+					20,
 					{0, 0, 0, 1},
 				)
 
 				if bordered_button(
-					position - {0.0, box_height * 0.5 - 30},
-					{100, 50},
+					position - {0.0, box_height * 0.5 - 40},
+					{button_width, button_height},
 					"Buy",
 					30,
-					100 + auto_cast game_data.next_upgrades[i].upgrade,
+					100 + u32(game_data.next_upgrades[i].upgrade) + u32(i * 100),
 					game_data.next_upgrades[i].purchased ||
 					game_data.money < game_data.next_upgrades[i].cost,
 				) {
@@ -1307,6 +1294,37 @@ game_play :: proc() {
 
 				position += {box_width + padding, 0}
 				xform = xform * transform_2d({box_width + padding, 0.0})
+			}
+
+			if bordered_button(
+				{
+					-button_width * 0.5 - padding * 0.5,
+					-box_height * 0.5 - padding * 1.5 - button_height * 0.5,
+				},
+				{button_width, button_height},
+				fmt.tprintf("Reroll shop: - $%d", game_data.reroll_cost),
+				16,
+				1,
+				game_data.reroll_cost > game_data.money,
+			) {
+				game_data.money -= game_data.reroll_cost
+				generate_new_shop_upgrades()
+				game_data.reroll_cost += REROLL_COST_MODIFIER
+			}
+			if bordered_button(
+				{
+					button_width * 0.5 + padding * 0.5,
+					-box_height * 0.5 - padding * 1.5 - button_height * 0.5,
+				},
+				{button_width, button_height},
+				"Next Wave",
+				16,
+				2,
+			) {
+				game_data.current_wave += 1
+				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
+				game_data.ui_state = .none
+				game_data.reroll_cost = 0
 			}
 
 		}
@@ -1353,16 +1371,28 @@ game_play :: proc() {
 
 
 		if game_data.ui_state == .player_death {
-			// draw_rect_bordered_center_xform(
-			// 	transform_2d(V2_ZERO),
-			// 	{400, 500},
-			// 	10,
-			// 	COLOR_WHITE,
-			// 	{0.4, 0.4, 0.4, 1},
-			// )
-			//
+
+			button_pos_y: f32 = -30
+			button_font_size: f32 : 24
+			button_margin: f32 : 15
+			button_size := Vector2{200, 50}
+
 			draw_text_center_center({0, 100}, "PLAYER DEAD", 48)
 			draw_text_center_center({0, 50}, "GAME OVER", 48)
+
+			if bordered_button(
+				{0, button_pos_y},
+				button_size,
+				"Restart run",
+				button_font_size,
+				0,
+			) {
+				restart_run()
+			}
+			button_pos_y -= button_margin + button_size.y
+			if bordered_button({0, button_pos_y}, button_size, "Exit", button_font_size, 1) {
+				sapp.quit()
+			}
 		}
 
 	}
