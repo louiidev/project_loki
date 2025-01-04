@@ -22,6 +22,7 @@ ImageId :: enum {
 	circle,
 	tiles,
 	cursor,
+	skull,
 }
 
 Image_Column_Rows_Count := [ImageId][2]int {
@@ -36,6 +37,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.circle          = {1, 1},
 	.tiles           = {2, 2},
 	.cursor          = {1, 1},
+	.skull           = {1, 1},
 }
 
 

@@ -113,7 +113,7 @@ PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
 UPGRADE_TIMER_SHOW_TIME :: 0.9
 TIMER_TO_SHOW_DEATH_UI: f32 : 2.0
 TIMER_TO_SHOW_DEATH_ANIMATION: f32 : 0.3
-STUN_TIME :: 0.5
+INITIAL_STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
@@ -189,6 +189,7 @@ GameRunState :: struct {
 	bullet_spread:                        f32,
 	bullet_range:                         f32,
 	time_to_reload:                       f32,
+	enemy_stun_time:                      f32,
 
 
 	// camera shake
@@ -198,6 +199,10 @@ GameRunState :: struct {
 	timers:                               [dynamic]Timer,
 	world_time_elapsed:                   f32,
 	explosions:                           [dynamic]Explosion,
+
+	// STATS
+	enemies_killed:                       u32,
+	money_earned:                         u32,
 }
 
 game_data: GameRunState
@@ -230,6 +235,7 @@ setup_run :: proc() {
 	game_data.bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
 	game_data.time_to_reload = PLAYER_INITIAL_RELOAD_TIME
 	game_data.camera_zoom = 1.0
+	game_data.enemy_stun_time = INITIAL_STUN_TIME
 }
 
 
@@ -709,6 +715,7 @@ game_play :: proc() {
 				// xp.active = false
 				money.picked_up = true
 				game_data.money += 1
+				game_data.money_earned += 1
 			}
 
 			if money.picked_up {
@@ -998,8 +1005,10 @@ game_play :: proc() {
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
+
 				append(&game_data.money_pickups, MoneyPickup{enemy.position, true, false})
 				enemy.active = false
+				game_data.enemies_killed += 1
 				continue
 			}
 
@@ -1115,7 +1124,7 @@ game_play :: proc() {
 					if (p.last_hit_ent_id != e.id &&
 						   circles_overlap(p.position, 6, e.position, 6)) {
 						knockback_enemy(&e, linalg.normalize(p.velocity))
-						e.stun_timer = STUN_TIME
+						e.stun_timer = game_data.enemy_stun_time
 						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
 							p.active = false
 
@@ -1371,6 +1380,12 @@ game_play :: proc() {
 				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
 				game_data.ui_state = .none
 				game_data.reroll_cost = 0
+				log("bullet speed", game_data.bullet_spread)
+				log("player speed", game_data.player.speed, game_data.player.speed_while_shooting)
+				log("player speed", game_data.player.speed, game_data.player.speed_while_shooting)
+				log("pickup radius", game_data.money_pickup_radius)
+				log("stun time", game_data.enemy_stun_time)
+				log("reload speed", game_data.time_to_reload)
 			}
 
 		}
@@ -1415,9 +1430,12 @@ game_play :: proc() {
 			}
 		}
 
-
 		if game_data.ui_state == .player_death {
-
+			draw_rect_center_xform(
+				transform_2d({0, 0}),
+				{auto_cast sapp.width(), auto_cast sapp.height()},
+				COLOR_BLACK - {0, 0, 0, 0.65},
+			)
 			button_pos_y: f32 = -30
 			button_font_size: f32 : 24
 			button_margin: f32 : 15
@@ -1426,6 +1444,20 @@ game_play :: proc() {
 			draw_text_center_center({0, 100}, "PLAYER DEAD", 48)
 			draw_text_center_center({0, 50}, "GAME OVER", 48)
 
+			stat_img_x: f32 = 60
+			stat_img_y: f32 = -175
+			draw_quad_center_xform(transform_2d({-stat_img_x, stat_img_y}), {80, 80}, .skull)
+			draw_quad_center_xform(transform_2d({stat_img_x, stat_img_y}), {120, 120}, .money)
+			draw_text_center_center(
+				{-stat_img_x + 3, stat_img_y - 50},
+				fmt.tprintf("%d", game_data.enemies_killed),
+				30,
+			)
+			draw_text_center_center(
+				{stat_img_x + 3, stat_img_y - 50},
+				fmt.tprintf("%d", game_data.money_earned),
+				30,
+			)
 			if bordered_button(
 				{0, button_pos_y},
 				button_size,
@@ -1439,6 +1471,8 @@ game_play :: proc() {
 			if bordered_button({0, button_pos_y}, button_size, "Exit", button_font_size, 1) {
 				sapp.quit()
 			}
+
+
 		}
 
 	}

@@ -14,6 +14,9 @@ Upgrade :: enum {
 	AMMO_UPGRADE,
 	BULLETS,
 	EXPLODING_ENEMIES,
+	PICKUP_RADIUS,
+	WALKING_SPEED,
+	STUN_TIME,
 }
 
 
@@ -41,6 +44,13 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Bullets +1"
 	case .EXPLODING_ENEMIES:
 		return "Enemies Explode on Death"
+	case .PICKUP_RADIUS:
+		return "Increased Pickup Radius"
+	case .WALKING_SPEED:
+		return "Increased Walking Speed"
+	case .STUN_TIME:
+		return "Increased Stun Time"
+
 	}
 
 
@@ -73,10 +83,21 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 
 	case .EXPLODING_ENEMIES:
 		return "5%+ chance an enemy explodes on death"
+	case .PICKUP_RADIUS:
+		return "Increases Radius by 5%"
+	case .WALKING_SPEED:
+		return "Increases Speed by 5%"
+	case .STUN_TIME:
+		return "Increases Stun time by 5%"
 	}
 
 
 	return "ERROR"
+}
+
+
+increase_upgrade_by_percentage :: proc(percentage: f32, upgrade: ^f32) {
+	upgrade^ += upgrade^ * (percentage / 100)
 }
 
 
@@ -110,11 +131,59 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 			PLAYER_MIN_POSSIBLE_RELOAD_TIME,
 			game_data.time_to_reload - (game_data.time_to_reload * 0.05),
 		)
+	case .ROLL_SPEED:
+		increase_upgrade_by_percentage(5, &game_data.player.roll_speed)
+	case .WALKING_SPEED:
+		increase_upgrade_by_percentage(5, &game_data.player.speed)
+		increase_upgrade_by_percentage(5, &game_data.player.speed_while_shooting)
+	case .PICKUP_RADIUS:
+		increase_upgrade_by_percentage(5, &game_data.money_pickup_radius)
+	case .STUN_TIME:
+		increase_upgrade_by_percentage(5, &game_data.enemy_stun_time)
 	}
 
 
 }
 
+
+get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
+
+
+	switch upgrade {
+	case .BOUNCE_SHOT:
+		return 5
+	case .MAX_HEALTH:
+		return 3
+	case .HEALTH:
+		return 2
+	case .HEALTH_2:
+		return 3
+	case .PIERCING_SHOT:
+		return 2
+	case .RELOAD_SPEED:
+		return 1
+	case .ROLL_SPEED:
+		return 1
+	case .ROLL_STAMINIA:
+		return 1
+	case .AMMO_UPGRADE:
+		return 2
+	case .BULLETS:
+		return 6
+	case .EXPLODING_ENEMIES:
+		return 1
+	case .PICKUP_RADIUS:
+		return 1
+	case .WALKING_SPEED:
+		return 1
+	case .STUN_TIME:
+		return 2
+	}
+
+	return 0
+
+
+}
 
 get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 	switch upgrade {
@@ -140,6 +209,12 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return 0.1
 	case .EXPLODING_ENEMIES:
 		return 0.3
+	case .PICKUP_RADIUS:
+		return 0.3
+	case .WALKING_SPEED:
+		return 0.3
+	case .STUN_TIME:
+		return 0.25
 	}
 
 	return 0
