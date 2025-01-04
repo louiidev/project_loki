@@ -23,8 +23,19 @@ EnemyType :: enum {
 	CRAWLER,
 	BULL,
 	CACTUS,
+	BARREL,
 }
 
+
+create_barrel :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity()
+	enemy.position = position
+	enemy.type = .BARREL
+	enemy.speed = 0
+	enemy.id = last_id
+	return enemy
+}
 
 create_bat :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
@@ -208,6 +219,15 @@ bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 		entity.charge_distance += dist_this_frame
 
 		entity.position += {x, y}
+		x_normalized := math.sign(x)
+		if run_every_seconds(0.05) {
+			spawn_walking_particles(
+				entity.position + {-x_normalized * 2, -5},
+				COLOR_WHITE,
+				{-x, -y},
+			)
+		}
+
 	} else if entity.charge_distance >= BULL_MAX_CHARGE_DIST {
 		entity.attack_direction = V2_ZERO
 		entity.weapon_cooldown_timer = 0
@@ -230,10 +250,11 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .CRAWLER:
 		return 1
 	case .BAT:
-		return 1
+		return 2
 	case .BULL:
 		return 4
 	case .CACTUS:
+	case .BARREL:
 		return 1
 	}
 
@@ -243,12 +264,14 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	switch (enemy_type) {
 	case .CRAWLER:
-		return 0.7
+		return 1.0
 	case .BAT:
-		return 0.4
+		return 0.1
 	case .BULL:
 		return 0.1
 	case .CACTUS:
+		return 0.1
+	case .BARREL:
 		return 0.1
 	}
 
@@ -294,6 +317,7 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 
 	for type in EnemyType {
 		if game_data.current_wave < get_min_wave_for_enemy_spawn(type) {
+			log(game_data.current_wave, type)
 			continue
 		}
 
@@ -323,9 +347,17 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 			append(&game_data.enemies, create_bull(position))
 		case .CACTUS:
 			append(&game_data.enemies, create_cactus(position))
+		case .BARREL:
+			append(&game_data.enemies, create_barrel(position))
 		}
+
 
 		game_data.enemies[len(game_data.enemies) - 1].spawn_indicator_timer = SPAWN_INDICATOR_TIME
 		unordered_remove(&spawn_bag, spawn_bag_index)
 	}
+}
+
+
+damage_enemy :: proc(e: ^Enemy, damage_to_deal: int) {
+	e.health -= damage_to_deal
 }

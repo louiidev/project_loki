@@ -44,7 +44,7 @@ spawn_particles :: proc(position: Vector2, color: Vector4 = COLOR_WHITE) {
 
 
 spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
-	num_particles := rand.int_max(6) + 2
+	num_particles := rand.int_max(1) + 1
 	last_dir: f32 = 0
 	for i := 0; i < num_particles; i += 1 {
 
@@ -55,7 +55,7 @@ spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Ve
 		particle.active = true
 		particle.color = color
 		particle.lifetime = PARTICLE_LIFETIME
-		particle.size = 1.0 + rand.float32_range(0, 0.5)
+		particle.size = 3.0 + rand.float32_range(0, 1.5)
 		particle.imageId = .circle
 		particle.scalar = 1.0
 

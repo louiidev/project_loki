@@ -25,12 +25,13 @@ ImageId :: enum {
 	skull,
 }
 
+
 Image_Column_Rows_Count := [ImageId][2]int {
 	.nil             = {0, 0},
 	.player          = {7, 2},
 	.projectiles     = {3, 2},
 	.weapons         = {3, 1},
-	.enemies         = {4, 4},
+	.enemies         = {4, len(EnemyType)},
 	.spawn_indicator = {1, 1},
 	.level_bounds    = {1, 1},
 	.money           = {1, 1},

@@ -314,19 +314,40 @@ calc_rotation_to_target :: proc(a, b: Vector2) -> f32 {
 }
 
 
-EXPLOSION_LIFETIME: f32 : 0.35
+EXPLOSION_LIFETIME: f32 : 0.25
 create_explosion :: proc(position: Vector2) {
 
-
+	camera_shake(0.75)
 	explosion: Explosion
 
-	size := rand.float32_range(16, 32)
+	size := rand.float32_range(20, 48)
 
 	explosion.size = size
 	explosion.position = position
 	explosion.max_lifetime = EXPLOSION_LIFETIME
 	explosion.active = true
 	append(&game_data.explosions, explosion)
+
+
+	for &enemy in game_data.enemies {
+		if circles_overlap(
+			enemy.position,
+			enemy.collision_radius,
+			explosion.position,
+			explosion.size,
+		) {
+			damage_enemy(&enemy, 1)
+		}
+	}
+
+	if circles_overlap(
+		game_data.player.position,
+		game_data.player.collision_radius,
+		explosion.position,
+		explosion.size,
+	) {
+		damage_player(1)
+	}
 }
 
 knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
@@ -338,10 +359,13 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	case .BULL:
 		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
 	case .CACTUS:
+	case .BARREL:
 
 	}
 
-	if enemy.type == .CACTUS || enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
+	if enemy.type == .CACTUS ||
+	   enemy.type == .BARREL ||
+	   enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
 		return
 	}
 
@@ -789,7 +813,7 @@ game_play :: proc() {
 			speed = player.roll_speed
 
 			x_normalized := math.sign(x)
-			if run_every_seconds(0.5) {
+			if run_every_seconds(0.075) {
 				spawn_walking_particles(
 					player.position + {-x_normalized * 2, -5},
 					COLOR_WHITE,
@@ -1009,6 +1033,16 @@ game_play :: proc() {
 				append(&game_data.money_pickups, MoneyPickup{enemy.position, true, false})
 				enemy.active = false
 				game_data.enemies_killed += 1
+				if game_data.player_upgrade[.EXPLODING_ENEMIES] > 0 {
+					percentage: f32 = auto_cast (game_data.player_upgrade[.EXPLODING_ENEMIES] * 5)
+					if percentage >= rand.float32_range(0, 100) {
+						create_explosion(enemy.position)
+					}
+
+				} else if enemy.type == .BARREL {
+					create_explosion(enemy.position)
+				}
+
 				continue
 			}
 
@@ -1046,6 +1080,8 @@ game_play :: proc() {
 				bull_update_logic(&enemy, dt)
 			case .CACTUS:
 				cactus_update_logic(&enemy, dt)
+			case .BARREL:
+
 			}
 
 
@@ -1063,7 +1099,6 @@ game_play :: proc() {
 			}
 
 			knockback_logic_update(&enemy, dt, ENEMY_KNOCKBACK_VELOCITY, &enemy.position)
-
 
 			uvs := get_frame_uvs(.enemies, {0, sprite_y_index}, {16, 16})
 
@@ -1153,7 +1188,7 @@ game_play :: proc() {
 							p.hits += 1
 							p.last_hit_ent_id = e.id
 						}
-						e.health -= p.damage_to_deal
+						damage_enemy(&e, p.damage_to_deal)
 
 						spawn_particles(p.position, hex_to_rgb(0xffed73))
 						if e.health <= 0 {
