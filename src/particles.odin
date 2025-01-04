@@ -12,6 +12,8 @@ Particle :: struct {
 	current_lifetime: f32,
 	size:             f32,
 	color:            Vector4,
+	imageId:          ImageId,
+	scalar:           f32,
 }
 
 
@@ -41,6 +43,28 @@ spawn_particles :: proc(position: Vector2, color: Vector4 = COLOR_WHITE) {
 }
 
 
+spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
+	num_particles := rand.int_max(6) + 2
+	last_dir: f32 = 0
+	for i := 0; i < num_particles; i += 1 {
+
+		rand_direction: f32 = rand.float32_range(-1.5, 1.5)
+
+		particle: Particle
+		particle.position = position + rand_direction
+		particle.active = true
+		particle.color = color
+		particle.lifetime = PARTICLE_LIFETIME
+		particle.size = 1.0 + rand.float32_range(0, 0.5)
+		particle.imageId = .circle
+		particle.scalar = 1.0
+
+		particle.velocity = {math.cos(direction.x), math.sin(direction.y)} * PARTICLE_VELOCITY
+		append(&game_data.particles, particle)
+	}
+}
+
+
 update_render_particles :: proc(dt: f32) {
 
 	for &particle in &game_data.particles {
@@ -53,7 +77,6 @@ update_render_particles :: proc(dt: f32) {
 
 
 		normalized_life := particle.current_lifetime / particle.lifetime
-		// normalized_life := 1.0 - (particle.current_lifetime / particle.lifetime)
 		scale := (1.0 - normalized_life) * (1.0 - normalized_life)
 
 		current_size := particle.size * scale
@@ -64,9 +87,11 @@ update_render_particles :: proc(dt: f32) {
 
 		current_velocity := particle.velocity * scale
 		particle.position += current_velocity * dt
-		draw_rect_center_xform(
+		draw_quad_center_xform(
 			transform_2d(particle.position),
 			{current_size, current_size},
+			particle.imageId,
+			DEFAULT_UV,
 			particle.color,
 		)
 	}

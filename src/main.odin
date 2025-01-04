@@ -118,7 +118,7 @@ INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
 SPAWN_INDICATOR_TIME: f32 : 0.50
-LEVEL_BOUNDS: Vector2 : {640, 336}
+LEVEL_BOUNDS: Vector2 : {448, 240}
 HALF_BOUNDS: Vector2 : {LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.y * 0.5}
 
 WALLS: [4]Vector4 : {
@@ -168,6 +168,7 @@ GameRunState :: struct {
 	money_pickups:                        [dynamic]MoneyPickup,
 	enemy_spawn_timer:                    f32,
 	money:                                int,
+	ticks:                                u64,
 
 	// waves
 	current_wave:                         int,
@@ -233,12 +234,39 @@ setup_run :: proc() {
 
 
 generate_new_shop_upgrades :: proc() {
+
+	upgrades_bag: [dynamic]Upgrade
+	defer delete(upgrades_bag)
+
+	probabilities := get_upgrade_shop_probabilities()
+
+	for upgrade in Upgrade {
+
+		prob := int(probabilities[upgrade] * 1000)
+		for i := 0; i < prob; i += 1 {
+			append(&upgrades_bag, upgrade)
+		}
+
+	}
+
+
 	for i := 0; i < len(game_data.next_upgrades); i += 1 {
 		game_data.next_upgrades[i] = {
-			upgrade   = auto_cast rand.int31_max(len(Upgrade)),
+			upgrade   = upgrades_bag[rand.int_max(len(upgrades_bag))],
 			purchased = false,
 			cost      = 2,
 		}
+
+
+		for length := len(upgrades_bag) - 1; length >= 0; length -= 1 {
+			upgrade := upgrades_bag[length]
+			if upgrade == game_data.next_upgrades[i].upgrade {
+				ordered_remove(&upgrades_bag, length)
+			}
+
+		}
+
+
 	}
 }
 
@@ -504,6 +532,9 @@ GAMEPLAY_CLEAR_COLOR: sg.Color : {0.89, 0.7, 0.3, 1.0}
 game_play :: proc() {
 	clear_color = GAMEPLAY_CLEAR_COLOR
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
+	ticks_per_second = u64(1.0 / dt)
+	ticks_per_second = clamp(ticks_per_second, 60, 240)
+	defer game_data.ticks += 1
 	defer game_data.world_time_elapsed += dt
 	app_dt: f32 = dt
 	particle_dt: f32 = dt
@@ -742,9 +773,22 @@ game_play :: proc() {
 			}
 		}
 
+		if player.animation_state == .WALKING {
+
+		}
+
 		if player.animation_state == .ROLLING {
 			player.roll_stamina -= dt
 			speed = player.roll_speed
+
+			x_normalized := math.sign(x)
+			if run_every_seconds(0.5) {
+				spawn_walking_particles(
+					player.position + {-x_normalized * 2, -5},
+					COLOR_WHITE,
+					{-x, -y},
+				)
+			}
 
 			if player.roll_stamina <= 0 {
 				player.roll_stamina = 0
@@ -760,7 +804,6 @@ game_play :: proc() {
 		delta_x := gun_move_distance * math.cos(-rotation_z)
 		delta_y := gun_move_distance * math.sin(-rotation_z)
 		attack_position: Vector2 = player.position + {delta_x, -delta_y}
-		player_center_position := player.position + {-8, -8}
 
 		if inputs.mouse_down[Mousebutton.LEFT] || player.weapon_cooldown_timer > 0 {
 			speed = player.speed_while_shooting
@@ -905,35 +948,35 @@ game_play :: proc() {
 				player.max_roll_stamina,
 			)
 
-
-			// line
-			draw_rect_bordered_center_xform(
-				translate_mat4(extend(game_data.player.position + {0.0, 14})),
-				{12, 0.5},
-				1,
-				COLOR_WHITE,
-				{0.1, 0.1, 0.1, 1},
-			)
-
-			// left
-			draw_rect_bordered_center_xform(
-				translate_mat4(extend(game_data.player.position + {-6.3, 14})),
-				{0.5, 2.5},
-				1,
-				COLOR_WHITE,
-				{0.1, 0.1, 0.1, 1},
-			)
-
-			// right
-			draw_rect_bordered_center_xform(
-				translate_mat4(extend(game_data.player.position + {6.3, 14})),
-				{0.5, 2.5},
-				1,
-				COLOR_WHITE,
-				{0.1, 0.1, 0.1, 1},
-			)
-
 			if game_data.current_bullets_count == 0 && player.reload_timer > 0 {
+				// line
+				draw_rect_bordered_center_xform(
+					translate_mat4(extend(game_data.player.position + {0.0, 14})),
+					{12, 0.5},
+					1,
+					COLOR_WHITE,
+					{0.1, 0.1, 0.1, 1},
+				)
+
+				// left
+				draw_rect_bordered_center_xform(
+					translate_mat4(extend(game_data.player.position + {-6.3, 14})),
+					{0.5, 2.5},
+					1,
+					COLOR_WHITE,
+					{0.1, 0.1, 0.1, 1},
+				)
+
+				// right
+				draw_rect_bordered_center_xform(
+					translate_mat4(extend(game_data.player.position + {6.3, 14})),
+					{0.5, 2.5},
+					1,
+					COLOR_WHITE,
+					{0.1, 0.1, 0.1, 1},
+				)
+
+
 				t_normalized := 1.0 - (player.reload_timer / game_data.time_to_reload)
 				min: f32 = -6.3
 				max: f32 = 6.3
@@ -957,6 +1000,10 @@ game_play :: proc() {
 			if enemy.health <= 0 {
 				append(&game_data.money_pickups, MoneyPickup{enemy.position, true, false})
 				enemy.active = false
+				continue
+			}
+
+			if !enemy.active {
 				continue
 			}
 
@@ -1001,9 +1048,9 @@ game_play :: proc() {
 			sprite_y_index: int = auto_cast enemy.type
 			update_entity_timers(&enemy, dt)
 
-			knockback_flash: f32 = 0
+			flash_amount: f32 = 0
 			if enemy.knockback_timer > 0 || enemy.stun_timer > 0.2 {
-				knockback_flash = 1
+				flash_amount = 1
 			}
 
 			knockback_logic_update(&enemy, dt, ENEMY_KNOCKBACK_VELOCITY, &enemy.position)
@@ -1011,7 +1058,7 @@ game_play :: proc() {
 
 			uvs := get_frame_uvs(.enemies, {0, sprite_y_index}, {16, 16})
 
-			draw_quad_center_xform(xform, {16, 16}, .enemies, uvs, COLOR_WHITE, knockback_flash)
+			draw_quad_center_xform(xform, {16, 16}, .enemies, uvs, COLOR_WHITE, flash_amount)
 
 			if enemy.health != enemy.max_health {
 				draw_status_bar(
@@ -1241,7 +1288,6 @@ game_play :: proc() {
 
 		set_ui_projection_alignment(.center_center)
 		mouse_world_position = mouse_to_matrix()
-		game_data.ui_state = .upgrade_menu
 		// UPGRADE MENU
 		if game_data.ui_state == .upgrade_menu {
 
@@ -1283,7 +1329,7 @@ game_play :: proc() {
 				if bordered_button(
 					position - {0.0, box_height * 0.5 - 40},
 					{button_width, button_height},
-					"Buy",
+					fmt.tprintf("Buy: $%d", game_data.next_upgrades[i].cost),
 					30,
 					100 + u32(game_data.next_upgrades[i].upgrade) + u32(i * 100),
 					game_data.next_upgrades[i].purchased ||
@@ -1302,7 +1348,7 @@ game_play :: proc() {
 					-box_height * 0.5 - padding * 1.5 - button_height * 0.5,
 				},
 				{button_width, button_height},
-				fmt.tprintf("Reroll shop: - $%d", game_data.reroll_cost),
+				fmt.tprintf("Reroll shop: $%d", game_data.reroll_cost),
 				16,
 				1,
 				game_data.reroll_cost > game_data.money,
@@ -1429,6 +1475,17 @@ game_play :: proc() {
 		)
 	}
 
+
+	{
+		sapp.show_mouse(false)
+		set_ortho_projection(1.0)
+		mouse_world_position = mouse_to_matrix()
+		draw_quad_center_xform(
+			transform_2d(mouse_world_position),
+			{SPRITE_PIXEL_SIZE, SPRITE_PIXEL_SIZE},
+			.cursor,
+		)
+	}
 }
 
 MAIN_MENU_CLEAR_COLOR: sg.Color : {1, 1, 1, 1}
@@ -1444,7 +1501,7 @@ UiState :: struct {
 
 reset_ui_state :: proc() {
 	ui_state.click_captured = false
-
+	ui_state.hover_id = 0
 
 	if inputs.button_just_pressed[sapp.Mousebutton.LEFT] {
 		ui_state.down_clicked_id = 0

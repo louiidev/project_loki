@@ -35,3 +35,18 @@ camera_shake :: proc(amount: f32) {
 sine_breathe_alpha :: proc(p: $T) -> T where intrinsics.type_is_float(T) {
 	return (math.sin((p - .25) * 2.0 * math.PI) / 2.0) + 0.5
 }
+
+ticks_per_second: u64
+run_every_seconds :: proc(s: f32) -> bool {
+
+	test := f32(game_data.ticks) / f32(ticks_per_second)
+
+	interval: f32 = s * f32(ticks_per_second)
+
+	if interval < 1.0 {
+		log("run_every_seconds is ticking each frame, can't go faster than this")
+	}
+
+	run := (game_data.ticks % u64(interval)) == 0
+	return run
+}

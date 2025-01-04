@@ -94,7 +94,6 @@ bordered_button :: proc(
 		ui_state.hover_id = id
 		color = BUTTON_HOVER_COLOR
 	}
-
 	if !disabled && inputs.mouse_down[sapp.Mousebutton.LEFT] && ui_state.hover_id == id {
 		ui_state.down_clicked_id = id
 	}

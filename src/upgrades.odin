@@ -114,3 +114,46 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 
 
 }
+
+
+get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
+	switch upgrade {
+	case .BOUNCE_SHOT:
+		return 0.1
+	case .MAX_HEALTH:
+		return 0.1
+	case .HEALTH:
+		return 0.3
+	case .HEALTH_2:
+		return 0.2
+	case .PIERCING_SHOT:
+		return 0.15
+	case .RELOAD_SPEED:
+		return 0.24
+	case .ROLL_SPEED:
+		return 0.25
+	case .ROLL_STAMINIA:
+		return 0.25
+	case .AMMO_UPGRADE:
+		return 0.25
+	case .BULLETS:
+		return 0.1
+	case .EXPLODING_ENEMIES:
+		return 0.3
+	}
+
+	return 0
+
+
+}
+
+
+get_upgrade_shop_probabilities :: proc() -> [Upgrade]f32 {
+	probabilities: [Upgrade]f32
+	for type in Upgrade {
+		base_prob := get_upgrade_propability(type)
+		probabilities[type] = base_prob
+	}
+
+	return probabilities
+}

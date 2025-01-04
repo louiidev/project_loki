@@ -144,26 +144,25 @@ bat_update_logic :: proc(entity: ^Entity, dt: f32) {
 	target_position := game_data.player.position
 	distance_from_target := linalg.distance(target_position, entity.position)
 
-	if distance_from_target > BAT_FIRE_DIST {
-		// move closer
+	if distance_from_target <= BAT_FIRE_DIST {
+		if run_every_seconds(3) {
+			rotation_z := calc_rotation_to_target(target_position, entity.position)
+			attack_direction: Vector2 = {math.cos(rotation_z), math.sin(rotation_z)}
+			projectile: Projectile
+			projectile.sprite_cell_start = {0, 0}
+			projectile.animation_count = 1
+			projectile.time_per_frame = 0.02
+			projectile.position = entity.position
+			projectile.active = true
+			projectile.distance_limit = 250
+			projectile.rotation = rotation_z
+			projectile.velocity = attack_direction * 50
+			projectile.player_owned = false
+			projectile.damage_to_deal = 1
+			append(&game_data.projectiles, projectile)
+		}
+	} else {
 		move_entity_towards_player(entity, dt)
-	} else if entity.weapon_cooldown_timer <= 0 {
-		// fire projectile
-		rotation_z := calc_rotation_to_target(target_position, entity.position)
-		attack_direction: Vector2 = {math.cos(rotation_z), math.sin(rotation_z)}
-		projectile: Projectile
-		projectile.sprite_cell_start = {0, 0}
-		projectile.animation_count = 1
-		projectile.time_per_frame = 0.02
-		projectile.position = entity.position
-		projectile.active = true
-		projectile.distance_limit = 250
-		projectile.rotation = rotation_z
-		projectile.velocity = attack_direction * 50
-		projectile.player_owned = false
-		projectile.damage_to_deal = 1
-		append(&game_data.projectiles, projectile)
-		entity.weapon_cooldown_timer = 5
 	}
 }
 
@@ -231,7 +230,7 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .CRAWLER:
 		return 1
 	case .BAT:
-		return 2
+		return 1
 	case .BULL:
 		return 4
 	case .CACTUS:
@@ -241,7 +240,7 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	return 0
 }
 
-get_base_propability :: proc(enemy_type: EnemyType) -> f32 {
+get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	switch (enemy_type) {
 	case .CRAWLER:
 		return 0.7
@@ -260,11 +259,11 @@ get_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 
 decrease_rate: f32 : 0.05
 increase_rate: f32 : 0.05
-get_spawn_probabilities :: proc() -> [EnemyType]f32 {
+get_enemy_spawn_probabilities :: proc() -> [EnemyType]f32 {
 	probabilities: [EnemyType]f32
 	wave_number := game_data.current_wave
 	for type in EnemyType {
-		base_prob := get_base_propability(type)
+		base_prob := get_enemy_base_propability(type)
 		if type == .CACTUS {
 			probabilities[type] = base_prob
 			continue
@@ -291,7 +290,7 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 	spawn_bag: [dynamic]EnemyType
 	defer delete(spawn_bag)
 
-	probabilities := get_spawn_probabilities()
+	probabilities := get_enemy_spawn_probabilities()
 
 	for type in EnemyType {
 		if game_data.current_wave < get_min_wave_for_enemy_spawn(type) {

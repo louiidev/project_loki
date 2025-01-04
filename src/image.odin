@@ -20,6 +20,8 @@ ImageId :: enum {
 	level_bounds,
 	money,
 	circle,
+	tiles,
+	cursor,
 }
 
 Image_Column_Rows_Count := [ImageId][2]int {
@@ -32,6 +34,8 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.level_bounds    = {1, 1},
 	.money           = {1, 1},
 	.circle          = {1, 1},
+	.tiles           = {2, 2},
+	.cursor          = {1, 1},
 }
 
 
