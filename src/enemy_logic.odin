@@ -16,6 +16,13 @@ Enemy :: struct {
 	attack_direction:      Vector2,
 	charge_up_time:        f32,
 	charge_distance:       f32,
+	state:                 EnemyState,
+}
+
+EnemyState :: enum {
+	IDLE,
+	WALKING,
+	ATTACKING,
 }
 
 EnemyType :: enum {
@@ -24,13 +31,16 @@ EnemyType :: enum {
 	BULL,
 	CACTUS,
 	BARREL,
+	SLUG,
+	BBY_SLUG,
+	BARREL_CRAWLER,
+	JUMPER,
 }
 
 
 create_barrel :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
+	enemy.entity = create_entity(1, position)
 	enemy.type = .BARREL
 	enemy.speed = 0
 	enemy.id = last_id
@@ -39,8 +49,7 @@ create_barrel :: proc(position: Vector2) -> Enemy {
 
 create_bat :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
+	enemy.entity = create_entity(2, position)
 	enemy.type = .BAT
 	enemy.speed = 28
 	enemy.weapon_cooldown_timer = 10
@@ -50,8 +59,7 @@ create_bat :: proc(position: Vector2) -> Enemy {
 
 create_crawler :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
+	enemy.entity = create_entity(2, position)
 	enemy.type = .CRAWLER
 	enemy.speed = 20
 	enemy.id = last_id
@@ -60,26 +68,71 @@ create_crawler :: proc(position: Vector2) -> Enemy {
 
 create_bull :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
+	enemy.entity = create_entity(5, position)
 	enemy.type = .BULL
 	enemy.speed = 18
+
 	enemy.id = last_id
 	return enemy
 }
 
 create_cactus :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity()
-	enemy.position = position
+	enemy.entity = create_entity(1, position)
 	enemy.type = .CACTUS
 	enemy.speed = 0
 	enemy.id = last_id
 	return enemy
 }
 
+create_slug :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity(5, position)
+	enemy.type = .SLUG
+	enemy.speed = 15
+	enemy.id = last_id
+	return enemy
+}
 
-move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
+create_bby_slug :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity(1, position)
+	enemy.type = .BBY_SLUG
+	enemy.speed = 20
+	enemy.id = last_id
+	return enemy
+}
+
+create_barrel_crawler :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity(1, position)
+	enemy.type = .BARREL_CRAWLER
+	enemy.speed = 15
+	enemy.id = last_id
+	return enemy
+}
+
+create_jumper :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity(3, position)
+	enemy.type = .JUMPER
+	enemy.speed = 18
+	enemy.id = last_id
+	return enemy
+}
+
+
+create_bby_slugs :: proc(position: Vector2) {
+	num := rand.int_max(4) + 2
+	for i := 0; i < num; i += 1 {
+		append(
+			&game_data.enemies,
+			create_bby_slug(position + {rand.float32_range(-3, 3), rand.float32_range(-3, 3)}),
+		)
+	}
+}
+
+move_entity_towards_player :: proc(entity: ^Entity, dt: f32, speed: f32) {
 	if (entity.stun_timer > 0) {
 		return
 	}
@@ -91,8 +144,8 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
 
 	move_direction := linalg.normalize(target_position - entity.position)
 
-	x := entity.position.x + move_direction.x * dt * entity.speed
-	y := entity.position.y + move_direction.y * dt * entity.speed
+	x := entity.position.x + move_direction.x * dt * speed
+	y := entity.position.y + move_direction.y * dt * speed
 	potential_pos: Vector2 = {x, y}
 
 	can_move_x := true
@@ -105,7 +158,10 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
 		   entity == &enemy ||
 		   enemy.knockback_timer > 0 ||
 		   enemy.stun_timer > 0 ||
-		   entity.speed > enemy.speed {
+		   enemy.spawn_indicator_timer > 0 ||
+		   speed > enemy.speed ||
+		   enemy.state == .ATTACKING ||
+		   enemy.state == .IDLE {
 			continue
 		}
 
@@ -139,8 +195,52 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32) {
 	}
 }
 
-crawler_update_logic :: proc(entity: ^Entity, dt: f32) {
-	move_entity_towards_player(entity, dt)
+crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	move_entity_towards_player(entity, dt, entity.speed)
+	entity.state = .WALKING
+
+	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
+		damage_player(1)
+	}
+}
+
+
+slug_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	move_entity_towards_player(entity, dt, entity.speed)
+	entity.state = .WALKING
+
+	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
+		damage_player(1)
+	}
+}
+
+
+bby_slug_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	move_entity_towards_player(entity, dt, entity.speed)
+	entity.state = .WALKING
+
+	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
+		damage_player(1)
+	}
+}
+
+barrel_crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	move_entity_towards_player(entity, dt, entity.speed)
+	entity.state = .WALKING
+
+	if circles_overlap(
+		entity.position,
+		entity.collision_radius + 4,
+		game_data.player.position,
+		game_data.player.collision_radius + 4,
+	) {
+		damage_enemy(entity, entity.health, V2_ZERO)
+	}
+}
+
+
+jumper_update_logic :: proc(entity: ^Entity, dt: f32) {
+	move_entity_towards_player(entity, dt, entity.speed)
 
 
 	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
@@ -151,12 +251,14 @@ crawler_update_logic :: proc(entity: ^Entity, dt: f32) {
 
 BAT_FIRE_DIST :: 50
 
-bat_update_logic :: proc(entity: ^Entity, dt: f32) {
+bat_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	target_position := game_data.player.position
 	distance_from_target := linalg.distance(target_position, entity.position)
-
+	speed := entity.speed
 	if distance_from_target <= BAT_FIRE_DIST {
+		speed = speed * 0.25
 		if run_every_seconds(3) {
+			entity.state = .WALKING
 			rotation_z := calc_rotation_to_target(target_position, entity.position)
 			attack_direction: Vector2 = {math.cos(rotation_z), math.sin(rotation_z)}
 			projectile: Projectile
@@ -168,13 +270,17 @@ bat_update_logic :: proc(entity: ^Entity, dt: f32) {
 			projectile.distance_limit = 250
 			projectile.rotation = rotation_z
 			projectile.velocity = attack_direction * 50
-			projectile.player_owned = false
+			projectile.target = .PLAYER
 			projectile.damage_to_deal = 1
 			append(&game_data.projectiles, projectile)
+			entity.state = .ATTACKING
+		} else {
+			entity.state = .WALKING
 		}
 	} else {
-		move_entity_towards_player(entity, dt)
+		entity.state = .WALKING
 	}
+	move_entity_towards_player(entity, dt, entity.speed)
 }
 
 BULL_CHARGE_DIST :: 80
@@ -197,7 +303,7 @@ bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	if distance_from_target > BULL_CHARGE_DIST &&
 	   entity.weapon_cooldown_timer <= 0 &&
 	   entity.attack_direction == V2_ZERO {
-		move_entity_towards_player(entity, dt)
+		move_entity_towards_player(entity, dt, entity.speed)
 		entity.charge_distance = 0
 	} else if entity.attack_direction == V2_ZERO && entity.charge_distance == 0 {
 		entity.attack_direction = linalg.normalize(target_position - entity.position)
@@ -250,28 +356,44 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .CRAWLER:
 		return 1
 	case .BAT:
-		return 2
+		return 1
 	case .BULL:
 		return 4
 	case .CACTUS:
 	case .BARREL:
 		return 1
+	case .SLUG:
+		return 1
+	case .BBY_SLUG:
+		return 10000
+	case .BARREL_CRAWLER:
+		return 1
+	case .JUMPER:
+		return 1
 	}
 
 	return 0
 }
-
+// LARGER NUMBER = MORE FREQUENT
 get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	switch (enemy_type) {
 	case .CRAWLER:
-		return 1.0
+		return 0.5
 	case .BAT:
-		return 0.1
+		return 0.25
 	case .BULL:
 		return 0.1
 	case .CACTUS:
 		return 0.1
 	case .BARREL:
+		return 0.1
+	case .SLUG:
+		return 0.1
+	case .BBY_SLUG:
+		return 0
+	case .BARREL_CRAWLER:
+		return 0.1
+	case .JUMPER:
 		return 0.1
 	}
 
@@ -349,6 +471,14 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 			append(&game_data.enemies, create_cactus(position))
 		case .BARREL:
 			append(&game_data.enemies, create_barrel(position))
+		case .BBY_SLUG:
+			append(&game_data.enemies, create_bby_slug(position))
+		case .SLUG:
+			append(&game_data.enemies, create_slug(position))
+		case .BARREL_CRAWLER:
+			append(&game_data.enemies, create_barrel_crawler(position))
+		case .JUMPER:
+			append(&game_data.enemies, create_jumper(position))
 		}
 
 
@@ -358,6 +488,39 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 }
 
 
-damage_enemy :: proc(e: ^Enemy, damage_to_deal: int) {
+damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
 	e.health -= damage_to_deal
+
+
+	if e.health <= 0 {
+		create_enemybody_permanence(e, bullet_velocity)
+	} else {
+		knockback_enemy(e, linalg.normalize(bullet_velocity))
+	}
+}
+
+
+enemy_update :: proc(enemy: ^Enemy, dt: f32) {
+	switch (enemy.type) {
+	case .CRAWLER:
+		crawler_update_logic(enemy, dt)
+	case .BAT:
+		bat_update_logic(enemy, dt)
+	case .BULL:
+		bull_update_logic(enemy, dt)
+	case .CACTUS:
+		cactus_update_logic(enemy, dt)
+	case .BARREL:
+
+	case .SLUG:
+		slug_update_logic(enemy, dt)
+
+	case .BBY_SLUG:
+		bby_slug_update_logic(enemy, dt)
+	case .BARREL_CRAWLER:
+		barrel_crawler_update_logic(enemy, dt)
+	case .JUMPER:
+		jumper_update_logic(enemy, dt)
+	}
+
 }

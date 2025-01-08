@@ -1,11 +1,11 @@
 package main
 
 import "core:math"
+import "core:math/linalg"
 import "core:math/rand"
 
 Particle :: struct {
-	position:         Vector2,
-	active:           bool,
+	using _:          BaseEntity,
 	velocity:         Vector2,
 	rotation:         f32,
 	lifetime:         f32,
@@ -13,7 +13,17 @@ Particle :: struct {
 	size:             f32,
 	color:            Vector4,
 	imageId:          ImageId,
-	scalar:           f32,
+}
+
+
+SpriteParticle :: struct {
+	using _:                Particle,
+	time_per_frame:         f32,
+	sprite_cell_start:      Vector2Int,
+	animation_count:        int,
+	current_frame:          int,
+	current_animation_time: f32,
+	scale:                  f32,
 }
 
 
@@ -57,7 +67,7 @@ spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Ve
 		particle.lifetime = PARTICLE_LIFETIME
 		particle.size = 3.0 + rand.float32_range(0, 1.5)
 		particle.imageId = .circle
-		particle.scalar = 1.0
+
 
 		particle.velocity = {math.cos(direction.x), math.sin(direction.y)} * PARTICLE_VELOCITY
 		append(&game_data.particles, particle)
@@ -97,11 +107,47 @@ update_render_particles :: proc(dt: f32) {
 	}
 
 
-	for i := len(game_data.particles) - 1; i >= 0; i -= 1 {
-		particle := &game_data.particles[i]
-		if !particle.active {
-			ordered_remove(&game_data.particles, i)
+	for &particle in &game_data.sprite_particles {
+
+
+		if particle.current_frame >= particle.animation_count - 1 {
+			particle.active = false
 		}
+		if !particle.active {
+			continue
+		}
+
+		particle.current_animation_time += dt
+
+		if particle.current_frame < particle.animation_count - 1 &&
+		   particle.current_animation_time > particle.time_per_frame {
+			particle.current_frame += 1
+			particle.current_animation_time = 0
+		}
+
+
+		xform :=
+			linalg.matrix4_translate(Vector3{particle.position.x, particle.position.y, 0.0}) *
+			linalg.matrix4_rotate(particle.rotation, Vector3{0, 0, 1})
+
+		uvs := get_frame_uvs(
+			.sprite_particles,
+			{particle.sprite_cell_start.x + particle.current_frame, particle.sprite_cell_start.y},
+			{16, 16},
+		)
+		draw_quad_center_xform(xform, {auto_cast 16, auto_cast 16}, .sprite_particles, uvs)
 	}
 
+}
+
+create_bullet_death :: proc(projectile: ^Projectile) {
+	sp: SpriteParticle
+	sp.active = true
+	sp.position = projectile.position
+	sp.sprite_cell_start = projectile.sprite_cell_start
+	sp.scale = projectile.scale
+	sp.animation_count = 7
+	sp.time_per_frame = 0.05
+	sp.rotation = projectile.rotation
+	append(&game_data.sprite_particles, sp)
 }

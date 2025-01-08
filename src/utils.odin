@@ -36,6 +36,10 @@ sine_breathe_alpha :: proc(p: $T) -> T where intrinsics.type_is_float(T) {
 	return (math.sin((p - .25) * 2.0 * math.PI) / 2.0) + 0.5
 }
 
+cos_breathe_alpha :: proc(p: $T) -> T where intrinsics.type_is_float(T) {
+	return (math.cos((p - .25) * 2.0 * math.PI) / 2.0) + 0.5
+}
+
 ticks_per_second: u64
 run_every_seconds :: proc(s: f32) -> bool {
 

@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:math"
 
 Upgrade :: enum {
@@ -17,6 +18,22 @@ Upgrade :: enum {
 	PICKUP_RADIUS,
 	WALKING_SPEED,
 	STUN_TIME,
+	BIGGER_BULLETS,
+}
+
+
+get_upgrade_percentage :: proc(upgrade: Upgrade) -> f32 {
+	upgrade_amount := game_data.player_upgrade[upgrade]
+
+
+	switch upgrade_amount {
+	case 0 ..= 1:
+		return 10
+	case 2 ..= 4:
+		return 5
+	}
+
+	return 2.5
 }
 
 
@@ -50,6 +67,8 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Increased Walking Speed"
 	case .STUN_TIME:
 		return "Increased Stun Time"
+	case .BIGGER_BULLETS:
+		return "Increased Bullet Size"
 
 	}
 
@@ -59,6 +78,9 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 
 
 get_upgrade_description :: proc(upgrade: Upgrade) -> string {
+
+
+	percentage := get_upgrade_percentage(upgrade)
 	switch upgrade {
 	case .BOUNCE_SHOT:
 		return "Bounces off enemy after hit"
@@ -73,22 +95,23 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 	case .RELOAD_SPEED:
 		return "Upgrades by reload speed by 5%"
 	case .ROLL_SPEED:
-		return "Upgrades by roll speed by 5%"
+		return fmt.tprintf("Upgrades by roll speed by 0.f%", percentage)
 	case .ROLL_STAMINIA:
-		return "Upgrades the roll staminia by 10%"
+		return fmt.tprintf("Upgrades the roll staminia by 0.f%", percentage)
 	case .AMMO_UPGRADE:
 		return "Upgrades the ammo by 2+"
 	case .BULLETS:
 		return "Upgrades the amount of bullets you fire by 1+"
-
 	case .EXPLODING_ENEMIES:
 		return "5%+ chance an enemy explodes on death"
 	case .PICKUP_RADIUS:
-		return "Increases Radius by 5%"
+		return fmt.tprintf("Increases Radius by 0.f%", percentage)
 	case .WALKING_SPEED:
-		return "Increases Speed by 5%"
+		return fmt.tprintf("Increases Speed by 0.f%", percentage)
 	case .STUN_TIME:
-		return "Increases Stun time by 5%"
+		return fmt.tprintf("Increases Stun time by 0.f%", percentage)
+	case .BIGGER_BULLETS:
+		return "Increases Bullet size by "
 	}
 
 
@@ -106,7 +129,7 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 	game_data.money -= shop_upgrade.cost
 	assert(game_data.money >= 0)
 	log(game_data.money, shop_upgrade.cost)
-
+	percentage := get_upgrade_percentage(shop_upgrade.upgrade)
 	game_data.player_upgrade[shop_upgrade.upgrade] += 1
 
 	#partial switch (shop_upgrade.upgrade) {
@@ -131,15 +154,17 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 			PLAYER_MIN_POSSIBLE_RELOAD_TIME,
 			game_data.time_to_reload - (game_data.time_to_reload * 0.05),
 		)
+	case .ROLL_STAMINIA:
+		increase_upgrade_by_percentage(percentage, &game_data.player.max_roll_stamina)
 	case .ROLL_SPEED:
-		increase_upgrade_by_percentage(5, &game_data.player.roll_speed)
+		increase_upgrade_by_percentage(percentage, &game_data.player.roll_speed)
 	case .WALKING_SPEED:
-		increase_upgrade_by_percentage(5, &game_data.player.speed)
-		increase_upgrade_by_percentage(5, &game_data.player.speed_while_shooting)
+		increase_upgrade_by_percentage(percentage, &game_data.player.speed)
+		increase_upgrade_by_percentage(percentage, &game_data.player.speed_while_shooting)
 	case .PICKUP_RADIUS:
-		increase_upgrade_by_percentage(5, &game_data.money_pickup_radius)
+		increase_upgrade_by_percentage(percentage, &game_data.money_pickup_radius)
 	case .STUN_TIME:
-		increase_upgrade_by_percentage(5, &game_data.enemy_stun_time)
+		increase_upgrade_by_percentage(percentage, &game_data.enemy_stun_time)
 	}
 
 
@@ -178,13 +203,15 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 		return 1
 	case .STUN_TIME:
 		return 2
+	case .BIGGER_BULLETS:
+		return 3
 	}
 
 	return 0
 
 
 }
-
+// LARGER NUMBER = MORE FREQUENT
 get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 	switch upgrade {
 	case .BOUNCE_SHOT:
@@ -215,6 +242,8 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return 0.3
 	case .STUN_TIME:
 		return 0.25
+	case .BIGGER_BULLETS:
+		return 0.1
 	}
 
 	return 0

@@ -28,16 +28,16 @@ AnimationState :: enum {
 	ROLLING,
 }
 
+
 last_id: u32 = 0
 Entity :: struct {
+	using _:                  BaseEntity,
 	id:                       u32,
-	position:                 Vector2,
 	speed:                    f32,
 	speed_while_shooting:     f32,
 	roll_speed:               f32,
-	active:                   bool,
-	health:                   int,
-	max_health:               int,
+	health:                   f32,
+	max_health:               f32,
 	collision_radius:         f32,
 	knockback_timer:          f32,
 	knockback_direction:      Vector2,
@@ -90,7 +90,7 @@ PLAYER_INITIAL_BULLET_VELOCITY :: 280.0
 PLAYER_INITIAL_FIRE_RATE :: 0.2
 PLAYER_INITIAL_PICKUP_RADIUS :: 19
 PLAYER_WALK_SPEED :: 50
-PLAYER_ROLL_SPEED :: 120
+PLAYER_ROLL_SPEED :: 100
 INITAL_ROLL_STAMINIA :: 2
 ROLL_STAMINIA_ADD_ON_SHOT :: 0.1
 
@@ -100,6 +100,8 @@ ENEMY_KNOCKBACK_TIME :: 0.1
 CRAWLER_ATTACK_TIME :: 10
 BAT_ATTACK_TIME :: 10
 PLAYER_KNOCKBACK_VELOCITY :: 120
+
+EXPLOSION_DMG_AMOUNT :: 2
 
 REROLL_COST_MODIFIER :: 2
 
@@ -117,7 +119,7 @@ INITIAL_STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
-SPAWN_INDICATOR_TIME: f32 : 0.50
+SPAWN_INDICATOR_TIME: f32 : 0.90
 LEVEL_BOUNDS: Vector2 : {448, 240}
 HALF_BOUNDS: Vector2 : {LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.y * 0.5}
 
@@ -155,8 +157,7 @@ Explosion :: struct {
 
 
 MoneyPickup :: struct {
-	position:  Vector2,
-	active:    bool,
+	using _:   BaseEntity,
 	picked_up: bool,
 }
 
@@ -164,6 +165,8 @@ GameRunState :: struct {
 	enemies:                              [dynamic]Enemy,
 	projectiles:                          [dynamic]Projectile,
 	particles:                            [dynamic]Particle,
+	sprite_particles:                     [dynamic]SpriteParticle,
+	permanence:                           [dynamic]Permanence,
 	player:                               Entity,
 	money_pickups:                        [dynamic]MoneyPickup,
 	enemy_spawn_timer:                    f32,
@@ -223,7 +226,7 @@ restart_run :: proc() {
 
 setup_run :: proc() {
 	game_data = {}
-	game_data.player = create_entity()
+	game_data.player = create_entity(2)
 	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
 	game_data.max_bullets = PLAYER_INITIAL_BULLETS
 	game_data.bullet_range = PLAYER_INITIAL_BULLET_RANGE
@@ -288,7 +291,7 @@ init :: proc "c" () {
 	stime.setup()
 	gfx_init()
 	init_images()
-
+	init_sound()
 	setup_run()
 
 }
@@ -317,26 +320,30 @@ calc_rotation_to_target :: proc(a, b: Vector2) -> f32 {
 EXPLOSION_LIFETIME: f32 : 0.25
 create_explosion :: proc(position: Vector2) {
 
-	camera_shake(0.75)
+	camera_shake(0.85)
 	explosion: Explosion
 
-	size := rand.float32_range(20, 48)
+	size := rand.float32_range(32, 64)
 
 	explosion.size = size
 	explosion.position = position
 	explosion.max_lifetime = EXPLOSION_LIFETIME
 	explosion.active = true
 	append(&game_data.explosions, explosion)
-
+	play_sound("event:/explosion")
 
 	for &enemy in game_data.enemies {
 		if circles_overlap(
 			enemy.position,
 			enemy.collision_radius,
 			explosion.position,
-			explosion.size,
+			explosion.size * 0.5,
 		) {
-			damage_enemy(&enemy, 1)
+			damage_enemy(
+				&enemy,
+				EXPLOSION_DMG_AMOUNT,
+				linalg.normalize(enemy.position - explosion.position) * 40,
+			)
 		}
 	}
 
@@ -344,20 +351,29 @@ create_explosion :: proc(position: Vector2) {
 		game_data.player.position,
 		game_data.player.collision_radius,
 		explosion.position,
-		explosion.size,
+		explosion.size * 0.5,
 	) {
-		damage_player(1)
+		damage_player(EXPLOSION_DMG_AMOUNT)
 	}
+
+	create_explosion_permanence(&explosion)
 }
 
 knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	switch (enemy.type) {
 	case .CRAWLER:
+	case .BBY_SLUG:
+	case .SLUG:
+
+	case .JUMPER:
 		enemy.attack_timer = CRAWLER_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+
 	case .BAT:
 		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
 	case .BULL:
 		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+
+	case .BARREL_CRAWLER:
 	case .CACTUS:
 	case .BARREL:
 
@@ -365,6 +381,7 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 
 	if enemy.type == .CACTUS ||
 	   enemy.type == .BARREL ||
+	   enemy.type == .BARREL_CRAWLER ||
 	   enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
 		return
 	}
@@ -373,12 +390,12 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 }
 
 
-damage_player :: proc(damage_amount: int) {
+damage_player :: proc(damage_amount: f32) {
 	using game_data
 	if player.i_frame_timer <= 0 && player.animation_state != .ROLLING {
 		player.health -= damage_amount
 		player.i_frame_timer = PLAYER_I_FRAME_TIMEOUT_AMOUNT
-
+		play_sound("event:/hit")
 		if player.health <= 0 {
 			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_UI
 			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_ANIMATION
@@ -452,11 +469,13 @@ update_entity_timers :: proc(ent: ^Entity, dt: f32) {
 	ent.current_animation_timer += dt
 }
 
-create_entity :: proc(position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
+create_entity :: proc(health: f32, position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
 	entity := DEFAULT_ENT
 	last_id += 1
 	entity.id = last_id
-
+	entity.health = health
+	entity.max_health = health
+	entity.position = position
 	return entity
 }
 
@@ -705,18 +724,18 @@ game_play :: proc() {
 				world_pos := tile_pos
 				xform := translate_mat4(world_pos)
 
-				color := Vector4{0.89, 0.7, 0.3, 1.0}
-				if (x + y) % 2 == 0 {
-					color = Vector4{0.88, 0.67, 0.32, 1.0}
-				}
+				// color := Vector4{0.89, 0.7, 0.3, 1.0}
+				// if (x + y) % 2 == 0 {
+				// 	color = Vector4{0.88, 0.67, 0.32, 1.0}
+				// }
 
-
+				color := COLOR_WHITE
 				if !is_within_bounds(tile_pos.xy) {
 					color.a = 0.3
 					color.rgb -= 0.5
 				}
 
-				draw_quad_xform(xform, {16, 16}, .nil, DEFAULT_UV, color)
+				draw_quad_xform(xform, {16, 16}, .tiles, DEFAULT_UV, color)
 			}
 		}
 	}
@@ -724,6 +743,11 @@ game_play :: proc() {
 	{
 		// LEVEL BOUNDS
 		draw_quad_center_xform(Matrix4(1), LEVEL_BOUNDS, .level_bounds)
+	}
+
+	{
+		// PERMANENCE
+		render_update_permanence(dt)
 	}
 
 	if game_data.ui_state == .none {
@@ -750,21 +774,12 @@ game_play :: proc() {
 			}
 
 			draw_pos := money.position
-			draw_pos.y += sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 4
+			draw_pos.y += sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 6
 			xform := translate_mat4({draw_pos.x, draw_pos.y, 0.0})
 
 
 			draw_quad_center_xform(xform, {16, 16}, .money, DEFAULT_UV, COLOR_WHITE)
 		}
-
-		// clean up enemies
-		for i := len(game_data.money_pickups) - 1; i >= 0; i -= 1 {
-			xp := &game_data.money_pickups[i]
-			if !xp.active {
-				ordered_remove(&game_data.money_pickups, i)
-			}
-		}
-
 	}
 
 	{
@@ -854,6 +869,8 @@ game_play :: proc() {
 
 			spread := game_data.bullet_spread + auto_cast game_data.player_upgrade[.BULLETS]
 			camera_shake(0.45)
+			play_sound("event:/gunshot")
+
 			for i := 0; i <= game_data.player_upgrade[.BULLETS]; i += 1 {
 				if game_data.current_bullets_count > 0 {
 					game_data.current_bullets_count -= 1
@@ -868,11 +885,13 @@ game_play :: proc() {
 						attack_direction,
 						rotation_with_randomness,
 					)
+					create_bullet_shell_permanence(&game_data.player, attack_direction * 700)
 				}
 
 			}
 
 			if game_data.current_bullets_count <= 0 {
+				play_sound("event:/reload")
 				player.reload_timer = game_data.time_to_reload
 			}
 
@@ -1029,18 +1048,30 @@ game_play :: proc() {
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
-
-				append(&game_data.money_pickups, MoneyPickup{enemy.position, true, false})
+				mp: MoneyPickup
+				mp.position = enemy.position
+				mp.active = true
+				mp.picked_up = false
+				append(&game_data.money_pickups, mp)
 				enemy.active = false
 				game_data.enemies_killed += 1
-				if game_data.player_upgrade[.EXPLODING_ENEMIES] > 0 {
+				if enemy.type == .BARREL || enemy.type == .BARREL_CRAWLER {
+					create_explosion(enemy.position)
+				} else if game_data.player_upgrade[.EXPLODING_ENEMIES] > 0 {
 					percentage: f32 = auto_cast (game_data.player_upgrade[.EXPLODING_ENEMIES] * 5)
 					if percentage >= rand.float32_range(0, 100) {
 						create_explosion(enemy.position)
 					}
 
-				} else if enemy.type == .BARREL {
-					create_explosion(enemy.position)
+				}
+
+
+				if enemy.type == .CACTUS {
+					create_quintuple_projectiles(enemy.position)
+				}
+
+				if enemy.type == .SLUG {
+					create_bby_slugs(enemy.position)
 				}
 
 				continue
@@ -1052,13 +1083,17 @@ game_play :: proc() {
 
 			if enemy.spawn_indicator_timer > 0 {
 				enemy.spawn_indicator_timer -= dt
-
+				pos := enemy.position
+				pos.y += sine_breathe_alpha(game_data.world_time_elapsed * 1.3) * 3
+				color := COLOR_WHITE
+				color.a -= sine_breathe_alpha(game_data.world_time_elapsed * 0.45)
+				color.a = math.max(0.3, color.a)
 				draw_quad_center_xform(
-					transform_2d(enemy.position),
+					transform_2d(pos),
 					{16, 16},
 					.spawn_indicator,
 					DEFAULT_UV,
-					COLOR_WHITE,
+					color,
 				)
 
 				continue
@@ -1071,32 +1106,50 @@ game_play :: proc() {
 			}
 
 
-			switch (enemy.type) {
-			case .CRAWLER:
-				crawler_update_logic(&enemy, dt)
-			case .BAT:
-				bat_update_logic(&enemy, dt)
-			case .BULL:
-				bull_update_logic(&enemy, dt)
-			case .CACTUS:
-				cactus_update_logic(&enemy, dt)
-			case .BARREL:
+			enemy_update(&enemy, dt)
 
-			}
-
-
-			// RENDER ENEMIES
-			xform := linalg.matrix4_translate_f32({enemy.position.x, enemy.position.y, 0.0})
-			if enemy.flip_x {
-				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
-			}
-			sprite_y_index: int = auto_cast enemy.type
-			update_entity_timers(&enemy, dt)
 
 			flash_amount: f32 = 0
 			if enemy.knockback_timer > 0 || enemy.stun_timer > 0.2 {
 				flash_amount = 1
 			}
+
+
+			position := enemy.position
+			scale := V2_ONE
+			if enemy.state == .WALKING {
+				scale.x -= sine_breathe_alpha(game_data.world_time_elapsed) * 0.05
+				scale.x += cos_breathe_alpha(game_data.world_time_elapsed) * 0.05
+
+				scale.y += sine_breathe_alpha(game_data.world_time_elapsed) * 0.05
+				scale.y -= cos_breathe_alpha(game_data.world_time_elapsed) * 0.05
+				log(scale.y)
+			}
+
+			if enemy.state == .WALKING {
+				position.y += sine_breathe_alpha(game_data.world_time_elapsed) * enemy.speed * 0.1
+				position.y -= cos_breathe_alpha(game_data.world_time_elapsed) * enemy.speed * 0.1
+			}
+
+			rotation :=
+				cos_breathe_alpha(game_data.world_time_elapsed * 0.5) * 0.05 -
+				sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 0.05
+
+
+			// RENDER ENEMIES
+			xform := transform_2d(position, 0, scale)
+
+			if enemy.state == .WALKING {
+				xform *= transform_2d({-5, -5}, rotation)
+				xform *= transform_2d({5, 5})
+			}
+
+
+			if enemy.flip_x {
+				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
+			}
+			sprite_y_index: int = auto_cast enemy.type
+			update_entity_timers(&enemy, dt)
 
 			knockback_logic_update(&enemy, dt, ENEMY_KNOCKBACK_VELOCITY, &enemy.position)
 
@@ -1116,15 +1169,6 @@ game_play :: proc() {
 		}
 
 
-		// clean up enemies
-		for i := len(game_data.enemies) - 1; i >= 0; i -= 1 {
-			enemy := &game_data.enemies[i]
-			if !enemy.active {
-				ordered_remove(&game_data.enemies, i)
-			}
-		}
-
-
 	}
 
 
@@ -1136,8 +1180,14 @@ game_play :: proc() {
 			p.current_distance_traveled += linalg.length(distance_this_frame)
 
 
-			if p.current_distance_traveled > p.distance_limit || !p.active {
+			if p.current_distance_traveled > p.distance_limit {
 				p.active = false
+				create_bullet_death(&p)
+				log("create_bullet_death")
+				continue
+			}
+
+			if !p.active {
 				continue
 			}
 
@@ -1150,7 +1200,7 @@ game_play :: proc() {
 			}
 
 
-			if p.player_owned {
+			if p.target != .PLAYER {
 				for &e in game_data.enemies {
 					if (!e.active || e.spawn_indicator_timer > 0) {
 						continue
@@ -1158,7 +1208,7 @@ game_play :: proc() {
 
 					if (p.last_hit_ent_id != e.id &&
 						   circles_overlap(p.position, 6, e.position, 6)) {
-						knockback_enemy(&e, linalg.normalize(p.velocity))
+
 						e.stun_timer = game_data.enemy_stun_time
 						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
 							p.active = false
@@ -1188,13 +1238,23 @@ game_play :: proc() {
 							p.hits += 1
 							p.last_hit_ent_id = e.id
 						}
-						damage_enemy(&e, p.damage_to_deal)
+						damage_enemy(&e, p.damage_to_deal, p.velocity)
 
-						spawn_particles(p.position, hex_to_rgb(0xffed73))
+
+						spawn_particles(
+							p.position,
+							p.target == .ENEMY ? hex_to_rgb(0xffed73) : hex_to_rgb(0xf85a5a),
+						)
 						if e.health <= 0 {
 							spawn_particles(e.position, COLOR_WHITE)
+							if e.type != .CACTUS && e.type != .CACTUS {
+								// create_blood_permanence(
+								// 	&p,
+								// 	e.position + linalg.normalize(p.velocity) + 5,
+								// )
+							}
 
-							// create_explosion(e.position)
+
 						}
 						game_data.player.roll_stamina = math.min(
 							game_data.player.roll_stamina + ROLL_STAMINIA_ADD_ON_SHOT,
@@ -1203,12 +1263,15 @@ game_play :: proc() {
 						break
 					}
 				}
-			} else if (circles_overlap(
-					   p.position,
-					   game_data.player.collision_radius,
-					   game_data.player.position,
-					   4,
-				   )) &&
+			}
+
+			if p.target != .ENEMY &&
+			   circles_overlap(
+				   p.position,
+				   game_data.player.collision_radius,
+				   game_data.player.position,
+				   4,
+			   ) &&
 			   game_data.player.animation_state != .ROLLING {
 				// PLAYER dmg
 
@@ -1226,13 +1289,6 @@ game_play :: proc() {
 				{16, 16},
 			)
 			draw_quad_center_xform(xform, {auto_cast 16, auto_cast 16}, .projectiles, uvs)
-		}
-
-
-		for p_i := len(game_data.projectiles) - 1; p_i >= 0; p_i -= 1 {
-			if (!game_data.projectiles[p_i].active) {
-				ordered_remove(&game_data.projectiles, p_i)
-			}
 		}
 
 
@@ -1259,12 +1315,6 @@ game_play :: proc() {
 				DEFAULT_UV,
 				color,
 			)
-		}
-
-		for p_i := len(game_data.explosions) - 1; p_i >= 0; p_i -= 1 {
-			if (!game_data.explosions[p_i].active) {
-				ordered_remove(&game_data.explosions, p_i)
-			}
 		}
 	}
 
@@ -1527,7 +1577,7 @@ game_play :: proc() {
 		padding: f32 = 10
 		draw_text(
 			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("Health: %d/%d", player.health, player.max_health),
+			fmt.tprintf("Health: %.0f/%.0f", player.health, player.max_health),
 			32,
 		)
 		size = measure_text("Health", 32) + size + padding
@@ -1554,6 +1604,18 @@ game_play :: proc() {
 			{SPRITE_PIXEL_SIZE, SPRITE_PIXEL_SIZE},
 			.cursor,
 		)
+	}
+
+
+	{
+		// CLEANUP frame
+		cleanup_base_entity(&game_data.enemies)
+		cleanup_base_entity(&game_data.projectiles)
+		cleanup_base_entity(&game_data.particles)
+		cleanup_base_entity(&game_data.sprite_particles)
+		cleanup_base_entity(&game_data.money_pickups)
+		cleanup_base_entity(&game_data.explosions)
+		cleanup_base_entity(&game_data.permanence)
 	}
 }
 
@@ -1604,7 +1666,7 @@ main_menu :: proc() {
 frame :: proc "c" () {
 	context = runtime.default_context()
 
-
+	update_sound()
 	switch app_state {
 	case .MainMenu:
 		main_menu()

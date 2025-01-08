@@ -165,7 +165,7 @@ translate_mat4 :: proc(translation: v3) -> mat4 {
 
 
 V2_ZERO :: Vector2{0.0, 0.0}
-V2_ONE :: Vector2{0.0, 0.0}
+V2_ONE :: Vector2{1.0, 1.0}
 transform_2d :: proc(
 	translation: v2 = V2_ZERO,
 	rotation_z: f32 = 0.0,
@@ -174,11 +174,11 @@ transform_2d :: proc(
 	tranform: Matrix4 = translate_mat4(extend(translation))
 
 	if rotation_z != 0.0 {
-
+		tranform *= linalg.matrix4_rotate(rotation_z, Vector3{0, 0, 1})
 	}
 
 	if scale != V2_ONE {
-		tranform = tranform * linalg.matrix4_scale(extend(scale))
+		tranform *= linalg.matrix4_scale(Vector3{scale.x, scale.y, 1.0})
 	}
 
 	return tranform

@@ -23,22 +23,30 @@ ImageId :: enum {
 	tiles,
 	cursor,
 	skull,
+	sprite_particles,
+	explosion,
+	blood,
+	bullet_shell,
 }
 
 
 Image_Column_Rows_Count := [ImageId][2]int {
-	.nil             = {0, 0},
-	.player          = {7, 2},
-	.projectiles     = {3, 2},
-	.weapons         = {3, 1},
-	.enemies         = {4, len(EnemyType)},
-	.spawn_indicator = {1, 1},
-	.level_bounds    = {1, 1},
-	.money           = {1, 1},
-	.circle          = {1, 1},
-	.tiles           = {2, 2},
-	.cursor          = {1, 1},
-	.skull           = {1, 1},
+	.nil              = {0, 0},
+	.player           = {7, 2},
+	.projectiles      = {3, 2},
+	.weapons          = {3, 1},
+	.enemies          = {5, len(EnemyType)},
+	.spawn_indicator  = {1, 1},
+	.level_bounds     = {1, 1},
+	.money            = {1, 1},
+	.circle           = {1, 1},
+	.tiles            = {1, 1},
+	.cursor           = {1, 1},
+	.skull            = {1, 1},
+	.sprite_particles = {7, 2},
+	.explosion        = {1, 1},
+	.blood            = {4, 1},
+	.bullet_shell     = {1, 1},
 }
 
 
