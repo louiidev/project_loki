@@ -64,7 +64,7 @@ create_quintuple_projectiles :: proc(position: Vector2, target: ProjectileTarget
 		projectile.sprite_cell_start = {0, 0}
 		projectile.rotation = 0.0
 		projectile.velocity = linalg.normalize(direction) * 30
-		projectile.target = .ALL
+		projectile.target = target
 		projectile.damage_to_deal = 1
 		projectile.last_hit_ent_id = 0
 		projectile.hits = 0

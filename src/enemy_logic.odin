@@ -5,6 +5,12 @@ import "core:math/linalg"
 import "core:math/rand"
 
 
+ENEMY_KNOCKBACK_VELOCITY :: 150
+ENEMY_KNOCKBACK_TIME: f32 : 0.1
+BAT_ATTACK_TIME: f32 : 5
+JUMPER_ATTACK_TIME: f32 : 5
+
+
 Enemy :: struct {
 	using entity:          Entity,
 	type:                  EnemyType,
@@ -20,6 +26,7 @@ Enemy :: struct {
 	// for jumping enemy
 	ground_y:              f32,
 	jump_velocity:         f32,
+	scale:                 Vector2,
 }
 
 EnemyState :: enum {
@@ -58,6 +65,7 @@ create_bat :: proc(position: Vector2) -> Enemy {
 	enemy.speed = 28
 	enemy.weapon_cooldown_timer = 10
 	enemy.id = last_id
+	enemy.attack_timer = BAT_ATTACK_TIME
 	return enemy
 }
 
@@ -122,6 +130,8 @@ create_jumper :: proc(position: Vector2) -> Enemy {
 	enemy.type = .JUMPER
 	enemy.speed = 18
 	enemy.id = last_id
+	enemy.attack_timer = JUMPER_ATTACK_TIME
+	enemy.state = .WALKING
 	return enemy
 }
 
@@ -243,14 +253,17 @@ barrel_crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
 }
 
 
-JUMP_VELOCITY: f32 : 500
+JUMP_VELOCITY: f32 : 300
 ENT_GRAVITY: f32 : 10
 jumper_update_logic :: proc(entity: ^Enemy, dt: f32) {
-	if run_every_seconds(6) {
+
+	if entity.attack_timer <= 0 {
+		entity.attack_timer = JUMPER_ATTACK_TIME
 		entity.state = .JUMPING
 		entity.jump_velocity = JUMP_VELOCITY
 		entity.ground_y = entity.position.y
 	}
+
 
 	if entity.state == .JUMPING {
 		entity.jump_velocity -= ENT_GRAVITY
@@ -258,10 +271,17 @@ jumper_update_logic :: proc(entity: ^Enemy, dt: f32) {
 		if entity.position.y < entity.ground_y {
 			entity.state = .IDLE
 			create_quintuple_projectiles(entity.position, .PLAYER)
+			camera_shake(0.6)
 		}
-
-	} else {
+	} else if entity.state == .WALKING {
 		move_entity_towards_player(entity, dt, entity.speed)
+		if linalg.distance(entity.position, game_data.player.position) <= 15 {
+			entity.attack_timer -= JUMPER_ATTACK_TIME * 0.5
+		}
+	} else if entity.state == .IDLE {
+		if run_every_seconds(1) {
+			entity.state = .WALKING
+		}
 	}
 
 }
@@ -275,7 +295,8 @@ bat_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	speed := entity.speed
 	if distance_from_target <= BAT_FIRE_DIST {
 		speed = speed * 0.25
-		if run_every_seconds(3) {
+		if entity.attack_timer <= 0 {
+			entity.attack_timer = BAT_ATTACK_TIME
 			entity.state = .WALKING
 			rotation_z := calc_rotation_to_target(target_position, entity.position)
 			attack_direction: Vector2 = {math.cos(rotation_z), math.sin(rotation_z)}
@@ -412,7 +433,7 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	case .BARREL_CRAWLER:
 		return 0.1
 	case .JUMPER:
-		return 0.1
+		return 1.0
 	}
 
 	return 0

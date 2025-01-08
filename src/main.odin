@@ -95,10 +95,7 @@ INITAL_ROLL_STAMINIA :: 2
 ROLL_STAMINIA_ADD_ON_SHOT :: 0.1
 
 SPRITE_PIXEL_SIZE :: 16
-ENEMY_KNOCKBACK_VELOCITY :: 150
-ENEMY_KNOCKBACK_TIME :: 0.1
-CRAWLER_ATTACK_TIME :: 10
-BAT_ATTACK_TIME :: 10
+
 PLAYER_KNOCKBACK_VELOCITY :: 120
 
 EXPLOSION_DMG_AMOUNT :: 2
@@ -366,7 +363,7 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	case .SLUG:
 
 	case .JUMPER:
-		enemy.attack_timer = CRAWLER_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+		enemy.attack_timer = JUMPER_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
 
 	case .BAT:
 		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
@@ -1124,6 +1121,10 @@ game_play :: proc() {
 				scale.y += sine_breathe_alpha(game_data.world_time_elapsed) * 0.05
 				scale.y -= cos_breathe_alpha(game_data.world_time_elapsed) * 0.05
 				log(scale.y)
+			}
+
+			if enemy.state == .JUMPING {
+				scale.x -= 0.2
 			}
 
 			if enemy.state == .WALKING {
