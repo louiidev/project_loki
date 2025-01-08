@@ -17,12 +17,16 @@ Enemy :: struct {
 	charge_up_time:        f32,
 	charge_distance:       f32,
 	state:                 EnemyState,
+	// for jumping enemy
+	ground_y:              f32,
+	jump_velocity:         f32,
 }
 
 EnemyState :: enum {
 	IDLE,
 	WALKING,
 	ATTACKING,
+	JUMPING,
 }
 
 EnemyType :: enum {
@@ -239,13 +243,27 @@ barrel_crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
 }
 
 
-jumper_update_logic :: proc(entity: ^Entity, dt: f32) {
-	move_entity_towards_player(entity, dt, entity.speed)
-
-
-	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1)
+JUMP_VELOCITY: f32 : 500
+ENT_GRAVITY: f32 : 10
+jumper_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	if run_every_seconds(6) {
+		entity.state = .JUMPING
+		entity.jump_velocity = JUMP_VELOCITY
+		entity.ground_y = entity.position.y
 	}
+
+	if entity.state == .JUMPING {
+		entity.jump_velocity -= ENT_GRAVITY
+		entity.position.y += entity.jump_velocity * dt
+		if entity.position.y < entity.ground_y {
+			entity.state = .IDLE
+			create_quintuple_projectiles(entity.position, .PLAYER)
+		}
+
+	} else {
+		move_entity_towards_player(entity, dt, entity.speed)
+	}
+
 }
 
 

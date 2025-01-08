@@ -53,7 +53,7 @@ create_player_projectile :: proc(
 
 
 quintuple_directions: [5]Vector2 : {{1, 1}, {1, -1}, {-1, -1}, {-1, 1}, {0, 1}}
-create_quintuple_projectiles :: proc(position: Vector2) {
+create_quintuple_projectiles :: proc(position: Vector2, target: ProjectileTarget) {
 	for direction in quintuple_directions {
 		projectile: Projectile
 		projectile.animation_count = 1

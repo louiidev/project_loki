@@ -1067,7 +1067,7 @@ game_play :: proc() {
 
 
 				if enemy.type == .CACTUS {
-					create_quintuple_projectiles(enemy.position)
+					create_quintuple_projectiles(enemy.position, .ALL)
 				}
 
 				if enemy.type == .SLUG {
