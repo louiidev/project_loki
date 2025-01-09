@@ -69,6 +69,7 @@ create_quintuple_projectiles :: proc(position: Vector2, target: ProjectileTarget
 		projectile.last_hit_ent_id = 0
 		projectile.hits = 0
 		projectile.bounce_count = 0
+
 		append(&game_data.projectiles, projectile)
 	}
 }

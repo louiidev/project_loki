@@ -27,6 +27,7 @@ ImageId :: enum {
 	explosion,
 	blood,
 	bullet_shell,
+	environment_prop,
 }
 
 
@@ -47,6 +48,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.explosion        = {1, 1},
 	.blood            = {4, 1},
 	.bullet_shell     = {1, 1},
+	.environment_prop = {2, 2},
 }
 
 

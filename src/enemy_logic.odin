@@ -9,6 +9,7 @@ ENEMY_KNOCKBACK_VELOCITY :: 150
 ENEMY_KNOCKBACK_TIME: f32 : 0.1
 BAT_ATTACK_TIME: f32 : 5
 JUMPER_ATTACK_TIME: f32 : 5
+GUNNER_ATTACK_TIME: f32 : 5
 
 
 Enemy :: struct {
@@ -27,6 +28,8 @@ Enemy :: struct {
 	ground_y:              f32,
 	jump_velocity:         f32,
 	scale:                 Vector2,
+	// gunner enemy
+	bullets_fired:         int,
 }
 
 EnemyState :: enum {
@@ -40,22 +43,11 @@ EnemyType :: enum {
 	BAT,
 	CRAWLER,
 	BULL,
-	CACTUS,
-	BARREL,
 	SLUG,
 	BBY_SLUG,
 	BARREL_CRAWLER,
 	JUMPER,
-}
-
-
-create_barrel :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity(1, position)
-	enemy.type = .BARREL
-	enemy.speed = 0
-	enemy.id = last_id
-	return enemy
+	GUNNER,
 }
 
 create_bat :: proc(position: Vector2) -> Enemy {
@@ -88,14 +80,6 @@ create_bull :: proc(position: Vector2) -> Enemy {
 	return enemy
 }
 
-create_cactus :: proc(position: Vector2) -> Enemy {
-	enemy: Enemy
-	enemy.entity = create_entity(1, position)
-	enemy.type = .CACTUS
-	enemy.speed = 0
-	enemy.id = last_id
-	return enemy
-}
 
 create_slug :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
@@ -131,6 +115,18 @@ create_jumper :: proc(position: Vector2) -> Enemy {
 	enemy.speed = 18
 	enemy.id = last_id
 	enemy.attack_timer = JUMPER_ATTACK_TIME
+	enemy.state = .WALKING
+	return enemy
+}
+
+
+create_gunner :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity(2, position)
+	enemy.type = .GUNNER
+	enemy.speed = 25
+	enemy.id = last_id
+	enemy.attack_timer = GUNNER_ATTACK_TIME
 	enemy.state = .WALKING
 	return enemy
 }
@@ -297,7 +293,6 @@ bat_update_logic :: proc(entity: ^Enemy, dt: f32) {
 		speed = speed * 0.25
 		if entity.attack_timer <= 0 {
 			entity.attack_timer = BAT_ATTACK_TIME
-			entity.state = .WALKING
 			rotation_z := calc_rotation_to_target(target_position, entity.position)
 			attack_direction: Vector2 = {math.cos(rotation_z), math.sin(rotation_z)}
 			projectile: Projectile
@@ -319,8 +314,59 @@ bat_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	} else {
 		entity.state = .WALKING
 	}
-	move_entity_towards_player(entity, dt, entity.speed)
+	move_entity_towards_player(entity, dt, speed)
 }
+
+GUNNER_FIRE_DIST :: 130
+GUNNER_BULLETS_PER_ATTACK :: 4
+gunner_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	target_position := game_data.player.position
+	distance_from_target := linalg.distance(target_position, entity.position)
+	speed := entity.speed
+	if distance_from_target <= GUNNER_FIRE_DIST {
+		speed = speed * 0.15
+		if entity.attack_timer <= 0 {
+			entity.state = .ATTACKING
+			if entity.bullets_fired <= GUNNER_BULLETS_PER_ATTACK {
+
+				if run_every_seconds(0.2) {
+					play_sound("event:/gunshot")
+					rotation_z := calc_rotation_to_target(target_position, entity.position)
+					rotation_with_randomness :=
+						rotation_z + math.to_radians(rand.float32_range(-10, 10))
+					attack_direction: Vector2 = {
+						math.cos(rotation_with_randomness),
+						math.sin(rotation_with_randomness),
+					}
+					entity.bullets_fired += 1
+					delta_x := PLAYER_GUN_MOVE_DIST * math.cos(-rotation_z)
+					delta_y := PLAYER_GUN_MOVE_DIST * math.sin(-rotation_z)
+					attack_position: Vector2 = entity.position + {delta_x, -delta_y}
+
+					projectile: Projectile
+					projectile.sprite_cell_start = {0, 0}
+					projectile.animation_count = 1
+					projectile.time_per_frame = 0.02
+					projectile.position = attack_position
+					projectile.active = true
+					projectile.distance_limit = 250
+					projectile.rotation = rotation_z
+					projectile.velocity = attack_direction * 80
+					projectile.target = .PLAYER
+					projectile.damage_to_deal = 1
+					append(&game_data.projectiles, projectile)
+				}
+			} else {
+				entity.attack_timer = GUNNER_ATTACK_TIME
+				entity.bullets_fired = 0
+			}
+		}
+	} else {
+		entity.state = .WALKING
+	}
+	move_entity_towards_player(entity, dt, speed)
+}
+
 
 BULL_CHARGE_DIST :: 80
 BULL_MAX_CHARGE_DIST: f32 : 130
@@ -398,9 +444,6 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 		return 1
 	case .BULL:
 		return 4
-	case .CACTUS:
-	case .BARREL:
-		return 1
 	case .SLUG:
 		return 1
 	case .BBY_SLUG:
@@ -408,6 +451,8 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .BARREL_CRAWLER:
 		return 1
 	case .JUMPER:
+		return 1
+	case .GUNNER:
 		return 1
 	}
 
@@ -422,10 +467,6 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 		return 0.25
 	case .BULL:
 		return 0.1
-	case .CACTUS:
-		return 0.1
-	case .BARREL:
-		return 0.1
 	case .SLUG:
 		return 0.1
 	case .BBY_SLUG:
@@ -433,7 +474,9 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	case .BARREL_CRAWLER:
 		return 0.1
 	case .JUMPER:
-		return 1.0
+		return 0.1
+	case .GUNNER:
+		return 0.8
 	}
 
 	return 0
@@ -448,10 +491,6 @@ get_enemy_spawn_probabilities :: proc() -> [EnemyType]f32 {
 	wave_number := game_data.current_wave
 	for type in EnemyType {
 		base_prob := get_enemy_base_propability(type)
-		if type == .CACTUS {
-			probabilities[type] = base_prob
-			continue
-		}
 		if base_prob > 0.45 {
 			probabilities[type] = math.max(
 				base_prob - (auto_cast wave_number * decrease_rate),
@@ -478,7 +517,6 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 
 	for type in EnemyType {
 		if game_data.current_wave < get_min_wave_for_enemy_spawn(type) {
-			log(game_data.current_wave, type)
 			continue
 		}
 
@@ -506,10 +544,6 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 			append(&game_data.enemies, create_crawler(position))
 		case .BULL:
 			append(&game_data.enemies, create_bull(position))
-		case .CACTUS:
-			append(&game_data.enemies, create_cactus(position))
-		case .BARREL:
-			append(&game_data.enemies, create_barrel(position))
 		case .BBY_SLUG:
 			append(&game_data.enemies, create_bby_slug(position))
 		case .SLUG:
@@ -518,12 +552,39 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 			append(&game_data.enemies, create_barrel_crawler(position))
 		case .JUMPER:
 			append(&game_data.enemies, create_jumper(position))
+		case .GUNNER:
+			append(&game_data.enemies, create_gunner(position))
 		}
 
 
 		game_data.enemies[len(game_data.enemies) - 1].spawn_indicator_timer = SPAWN_INDICATOR_TIME
 		unordered_remove(&spawn_bag, spawn_bag_index)
 	}
+}
+
+knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
+	switch (enemy.type) {
+	case .CRAWLER:
+	case .BBY_SLUG:
+	case .SLUG:
+
+	case .GUNNER:
+	case .JUMPER:
+		enemy.attack_timer = JUMPER_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+
+	case .BAT:
+		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+	case .BULL:
+		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
+
+	case .BARREL_CRAWLER:
+	}
+
+	if enemy.type == .BARREL_CRAWLER || enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
+		return
+	}
+
+	knockback_ent(&enemy.entity, direction)
 }
 
 
@@ -547,10 +608,6 @@ enemy_update :: proc(enemy: ^Enemy, dt: f32) {
 		bat_update_logic(enemy, dt)
 	case .BULL:
 		bull_update_logic(enemy, dt)
-	case .CACTUS:
-		cactus_update_logic(enemy, dt)
-	case .BARREL:
-
 	case .SLUG:
 		slug_update_logic(enemy, dt)
 
@@ -560,6 +617,8 @@ enemy_update :: proc(enemy: ^Enemy, dt: f32) {
 		barrel_crawler_update_logic(enemy, dt)
 	case .JUMPER:
 		jumper_update_logic(enemy, dt)
+	case .GUNNER:
+		gunner_update_logic(enemy, dt)
 	}
 
 }

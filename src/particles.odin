@@ -53,6 +53,28 @@ spawn_particles :: proc(position: Vector2, color: Vector4 = COLOR_WHITE) {
 }
 
 
+spawn_bullet_partciles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
+	num_particles := rand.int_max(1) + 1
+	last_dir: f32 = 0
+	for i := 0; i < num_particles; i += 1 {
+
+		rand_direction: Vector2 = {0, rand.float32_range(-.5, .5)}
+
+		particle: Particle
+		particle.position = position + rand_direction
+		particle.active = true
+		particle.color = color
+		particle.color.a = 0.3
+		particle.lifetime = PARTICLE_LIFETIME * 0.3
+		particle.size = 3.0 + rand.float32_range(0, 1.5)
+		particle.imageId = .circle
+
+
+		particle.velocity = {math.cos(direction.x), math.sin(direction.y)} * PARTICLE_VELOCITY
+		append(&game_data.particles, particle)
+	}
+}
+
 spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
 	num_particles := rand.int_max(1) + 1
 	last_dir: f32 = 0

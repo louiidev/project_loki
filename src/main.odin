@@ -56,6 +56,17 @@ Entity :: struct {
 }
 
 
+PropType :: enum {
+	CACTUS,
+	BARREL,
+}
+
+EnvironmentProp :: struct {
+	using _: BaseEntity,
+	type:    PropType,
+}
+
+
 AppState :: enum {
 	MainMenu,
 	GamePlay,
@@ -94,6 +105,9 @@ PLAYER_ROLL_SPEED :: 100
 INITAL_ROLL_STAMINIA :: 2
 ROLL_STAMINIA_ADD_ON_SHOT :: 0.1
 
+PLAYER_GUN_MOVE_DIST: f32 : 8.0
+
+
 SPRITE_PIXEL_SIZE :: 16
 
 PLAYER_KNOCKBACK_VELOCITY :: 120
@@ -110,8 +124,8 @@ ROLLING_ANIMATION_FRAMES :: 4
 PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
 
 UPGRADE_TIMER_SHOW_TIME :: 0.9
-TIMER_TO_SHOW_DEATH_UI: f32 : 2.0
-TIMER_TO_SHOW_DEATH_ANIMATION: f32 : 0.3
+TIMER_TO_SHOW_DEATH_UI: f32 : 4.0
+TIMER_TO_SHOW_DEATH_ANIMATION: f32 : 1.5
 INITIAL_STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
@@ -162,6 +176,7 @@ GameRunState :: struct {
 	enemies:                              [dynamic]Enemy,
 	projectiles:                          [dynamic]Projectile,
 	particles:                            [dynamic]Particle,
+	environment_prop:                     [dynamic]EnvironmentProp,
 	sprite_particles:                     [dynamic]SpriteParticle,
 	permanence:                           [dynamic]Permanence,
 	player:                               Entity,
@@ -354,36 +369,6 @@ create_explosion :: proc(position: Vector2) {
 	}
 
 	create_explosion_permanence(&explosion)
-}
-
-knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
-	switch (enemy.type) {
-	case .CRAWLER:
-	case .BBY_SLUG:
-	case .SLUG:
-
-	case .JUMPER:
-		enemy.attack_timer = JUMPER_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
-
-	case .BAT:
-		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
-	case .BULL:
-		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
-
-	case .BARREL_CRAWLER:
-	case .CACTUS:
-	case .BARREL:
-
-	}
-
-	if enemy.type == .CACTUS ||
-	   enemy.type == .BARREL ||
-	   enemy.type == .BARREL_CRAWLER ||
-	   enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
-		return
-	}
-
-	knockback_ent(&enemy.entity, direction)
 }
 
 
@@ -605,11 +590,16 @@ game_play :: proc() {
 	if game_data.timer_to_show_player_death_ui > 0 {
 		game_data.timer_to_show_player_death_ui -= app_dt
 		game_data.timer_to_show_player_death_animation -= app_dt
-		dt = math.lerp(
-			dt,
-			0.0,
+
+
+		progress := math.min(
 			game_data.timer_to_show_player_death_animation / TIMER_TO_SHOW_DEATH_ANIMATION,
-		)
+			1,
+		) // Clamp progress to 1
+		dt = dt * (1 - math.pow(progress, 2))
+
+
+		log(dt)
 
 		game_data.camera_zoom = math.lerp(game_data.camera_zoom, 1.3, app_dt)
 
@@ -842,10 +832,9 @@ game_play :: proc() {
 		}
 
 
-		gun_move_distance: f32 = 8.0
 		rotation_z := calc_rotation_to_target(mouse_world_position, player.position)
-		delta_x := gun_move_distance * math.cos(-rotation_z)
-		delta_y := gun_move_distance * math.sin(-rotation_z)
+		delta_x := PLAYER_GUN_MOVE_DIST * math.cos(-rotation_z)
+		delta_y := PLAYER_GUN_MOVE_DIST * math.sin(-rotation_z)
 		attack_position: Vector2 = player.position + {delta_x, -delta_y}
 
 		if inputs.mouse_down[Mousebutton.LEFT] || player.weapon_cooldown_timer > 0 {
@@ -1042,6 +1031,20 @@ game_play :: proc() {
 
 
 	{
+		//@enviroment_props
+		for &prop in game_data.environment_prop {
+			if prop.type == .CACTUS {
+				create_quintuple_projectiles(prop.position, .ALL)
+			}
+
+			if prop.type == .BARREL {
+				create_explosion(prop.position)
+			}
+
+		}
+	}
+
+	{
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
@@ -1052,7 +1055,7 @@ game_play :: proc() {
 				append(&game_data.money_pickups, mp)
 				enemy.active = false
 				game_data.enemies_killed += 1
-				if enemy.type == .BARREL || enemy.type == .BARREL_CRAWLER {
+				if enemy.type == .BARREL_CRAWLER {
 					create_explosion(enemy.position)
 				} else if game_data.player_upgrade[.EXPLODING_ENEMIES] > 0 {
 					percentage: f32 = auto_cast (game_data.player_upgrade[.EXPLODING_ENEMIES] * 5)
@@ -1062,10 +1065,6 @@ game_play :: proc() {
 
 				}
 
-
-				if enemy.type == .CACTUS {
-					create_quintuple_projectiles(enemy.position, .ALL)
-				}
 
 				if enemy.type == .SLUG {
 					create_bby_slugs(enemy.position)
@@ -1097,7 +1096,6 @@ game_play :: proc() {
 			}
 			if game_data.player.active &&
 			   game_data.timer_to_show_player_death_animation <= 0 &&
-			   enemy.type != .CACTUS &&
 			   enemy.attack_direction == V2_ZERO {
 				enemy.flip_x = enemy.position.x > game_data.player.position.x
 			}
@@ -1120,7 +1118,6 @@ game_play :: proc() {
 
 				scale.y += sine_breathe_alpha(game_data.world_time_elapsed) * 0.05
 				scale.y -= cos_breathe_alpha(game_data.world_time_elapsed) * 0.05
-				log(scale.y)
 			}
 
 			if enemy.state == .JUMPING {
@@ -1131,6 +1128,7 @@ game_play :: proc() {
 				position.y += sine_breathe_alpha(game_data.world_time_elapsed) * enemy.speed * 0.1
 				position.y -= cos_breathe_alpha(game_data.world_time_elapsed) * enemy.speed * 0.1
 			}
+
 
 			rotation :=
 				cos_breathe_alpha(game_data.world_time_elapsed * 0.5) * 0.05 -
@@ -1157,6 +1155,32 @@ game_play :: proc() {
 			uvs := get_frame_uvs(.enemies, {0, sprite_y_index}, {16, 16})
 
 			draw_quad_center_xform(xform, {16, 16}, .enemies, uvs, COLOR_WHITE, flash_amount)
+
+
+			if enemy.type == .GUNNER {
+				weapon_rotation_angle := calc_rotation_to_target(
+					game_data.player.position,
+					enemy.position,
+				)
+
+
+				xform = transform_2d(enemy.position)
+
+				if enemy.flip_x {
+					xform *= linalg.matrix4_scale_f32({-1, 1, 1})
+					weapon_rotation_angle = -calc_rotation_to_target(
+						enemy.position,
+						game_data.player.position,
+					)
+				}
+
+				xform *=
+					linalg.matrix4_rotate(weapon_rotation_angle, Vector3{0, 0, 1}) *
+					linalg.matrix4_translate_f32({-5, -12, 0.0})
+
+				weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
+				draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
+			}
 
 			if enemy.health != enemy.max_health {
 				draw_status_bar(
@@ -1200,6 +1224,9 @@ game_play :: proc() {
 				p.current_animation_time = 0
 			}
 
+			if p.target == .ENEMY {
+				spawn_bullet_partciles(p.position, hex_to_rgb(0xffed73), p.velocity)
+			}
 
 			if p.target != .PLAYER {
 				for &e in game_data.enemies {
@@ -1248,13 +1275,6 @@ game_play :: proc() {
 						)
 						if e.health <= 0 {
 							spawn_particles(e.position, COLOR_WHITE)
-							if e.type != .CACTUS && e.type != .CACTUS {
-								// create_blood_permanence(
-								// 	&p,
-								// 	e.position + linalg.normalize(p.velocity) + 5,
-								// )
-							}
-
 
 						}
 						game_data.player.roll_stamina = math.min(
@@ -1617,6 +1637,7 @@ game_play :: proc() {
 		cleanup_base_entity(&game_data.money_pickups)
 		cleanup_base_entity(&game_data.explosions)
 		cleanup_base_entity(&game_data.permanence)
+		cleanup_base_entity(&game_data.environment_prop)
 	}
 }
 
