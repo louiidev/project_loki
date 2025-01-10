@@ -53,6 +53,7 @@ Entity :: struct {
 	max_weapon_cooldown_time: f32,
 	i_frame_timer:            f32,
 	reload_timer:             f32,
+	scale_x:                  f32,
 }
 
 
@@ -251,8 +252,29 @@ setup_run :: proc() {
 	game_data.time_to_reload = PLAYER_INITIAL_RELOAD_TIME
 	game_data.camera_zoom = 1.0
 	game_data.enemy_stun_time = INITIAL_STUN_TIME
+	setup_scene_props()
 }
 
+
+setup_scene_props :: proc() {
+
+	amount_to_spawn := rand.int_max(5) + 3
+
+	for i := 0; i < amount_to_spawn; i += 1 {
+
+		prop_type := rand.int_max(len(PropType))
+		position: Vector2 = {
+			rand.float32_range(-LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.x * 0.5),
+			rand.float32_range(-LEVEL_BOUNDS.y * 0.5, LEVEL_BOUNDS.y * 0.5),
+		}
+
+		prop: EnvironmentProp
+		prop.type = auto_cast prop_type
+		prop.active = true
+		prop.position = position
+		append(&game_data.environment_prop, prop)
+	}
+}
 
 generate_new_shop_upgrades :: proc() {
 
@@ -556,6 +578,11 @@ cleanup_scene :: proc() {
 
 		spawn_particles(p.position)
 	}
+
+	for &p in game_data.environment_prop {
+		p.active = false
+		spawn_particles(p.position)
+	}
 }
 
 
@@ -598,8 +625,6 @@ game_play :: proc() {
 		) // Clamp progress to 1
 		dt = dt * (1 - math.pow(progress, 2))
 
-
-		log(dt)
 
 		game_data.camera_zoom = math.lerp(game_data.camera_zoom, 1.3, app_dt)
 
@@ -914,10 +939,6 @@ game_play :: proc() {
 
 		player.position = player.position + player_input * dt * speed
 
-		// RENDER PLAYER
-		xform := linalg.matrix4_translate_f32(
-			{game_data.player.position.x, game_data.player.position.y, 0.0},
-		)
 
 		frame_x := 0
 		frame_y := 0
@@ -937,6 +958,12 @@ game_play :: proc() {
 
 
 		if player.active {
+
+			flip_x := mouse_world_position.x < game_data.player.position.x
+			flip_x_value: f32 = flip_x ? -1.0 : 1.0
+
+			player.scale_x = math.lerp(player.scale_x, flip_x_value, dt * 10)
+			xform := transform_2d(game_data.player.position, 0, {player.scale_x, 1.0})
 			draw_quad_center_xform(
 				xform,
 				{auto_cast 16, auto_cast 16},
@@ -949,12 +976,7 @@ game_play :: proc() {
 			weapon_rotation_angle := calc_rotation_to_target(mouse_world_position, player.position)
 
 
-			flip_x := mouse_world_position.x < game_data.player.position.x
-
-
-			xform = linalg.matrix4_translate_f32(
-				{game_data.player.position.x, game_data.player.position.y, 0.0},
-			)
+			xform = transform_2d(game_data.player.position)
 
 			if flip_x {
 				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
@@ -1032,15 +1054,18 @@ game_play :: proc() {
 
 	{
 		//@enviroment_props
-		for &prop in game_data.environment_prop {
-			if prop.type == .CACTUS {
-				create_quintuple_projectiles(prop.position, .ALL)
+		for &prop in &game_data.environment_prop {
+			if !prop.active {
+				continue
 			}
-
-			if prop.type == .BARREL {
-				create_explosion(prop.position)
-			}
-
+			uvs := get_frame_uvs(.environment_prop, {0, auto_cast prop.type}, {16, 16})
+			draw_quad_center_xform(
+				transform_2d(prop.position),
+				{16, 16},
+				.environment_prop,
+				uvs,
+				COLOR_WHITE,
+			)
 		}
 	}
 
@@ -1134,9 +1159,11 @@ game_play :: proc() {
 				cos_breathe_alpha(game_data.world_time_elapsed * 0.5) * 0.05 -
 				sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 0.05
 
+			flip_x_value: f32 = enemy.flip_x ? -1.0 : 1.0
+			enemy.scale_x = math.lerp(enemy.scale_x, flip_x_value, dt * 10)
 
 			// RENDER ENEMIES
-			xform := transform_2d(position, 0, scale)
+			xform := transform_2d(position, 0, {scale.x * enemy.scale_x, scale.y})
 
 			if enemy.state == .WALKING {
 				xform *= transform_2d({-5, -5}, rotation)
@@ -1228,6 +1255,7 @@ game_play :: proc() {
 				spawn_bullet_partciles(p.position, hex_to_rgb(0xffed73), p.velocity)
 			}
 
+
 			if p.target != .PLAYER {
 				for &e in game_data.enemies {
 					if (!e.active || e.spawn_indicator_timer > 0) {
@@ -1289,15 +1317,32 @@ game_play :: proc() {
 			if p.target != .ENEMY &&
 			   circles_overlap(
 				   p.position,
-				   game_data.player.collision_radius,
-				   game_data.player.position,
 				   4,
+				   game_data.player.position,
+				   game_data.player.collision_radius,
 			   ) &&
 			   game_data.player.animation_state != .ROLLING {
 				// PLAYER dmg
 
 				p.active = false
 				damage_player(1)
+			}
+
+			for &prop in game_data.environment_prop {
+				if prop.active && circles_overlap(p.position, 5, prop.position, 5) {
+					if prop.type == .CACTUS {
+						create_quintuple_projectiles(prop.position, .ALL)
+
+					}
+
+					if prop.type == .BARREL {
+						create_explosion(prop.position)
+					}
+					create_prop_permanence(prop)
+					prop.active = false
+					p.active = false
+				}
+
 			}
 
 			xform :=
@@ -1385,20 +1430,53 @@ game_play :: proc() {
 
 	mouse_ui_pos := mouse_to_matrix()
 
+	{
+		// Base UI
+		set_ui_projection_alignment(.bottom_left)
+		using game_data
+
+		draw_text(
+			Vector2{10, 10},
+			fmt.tprintf("Ammo: %d/%d", game_data.current_bullets_count, game_data.max_bullets),
+			32,
+		)
+		size := measure_text("Ammo", 32)
+		padding: f32 = 10
+		draw_text(
+			Vector2{10, 10 + size.y + padding},
+			fmt.tprintf("Health: %.0f/%.0f", player.health, player.max_health),
+			32,
+		)
+		size = measure_text("Health", 32) + size + padding
+		draw_text(
+			Vector2{10, 10 + size.y + padding},
+			fmt.tprintf("Stamina: %.1f/%.1f", player.roll_stamina, player.max_roll_stamina),
+			32,
+		)
+		size = measure_text("Stamina", 32) + size + padding
+		draw_text(
+			Vector2{10, 10 + size.y + padding},
+			fmt.tprintf("Money: %d", game_data.money),
+			32,
+		)
+	}
+
 
 	{
 		set_ui_projection_alignment(.bottom_center)
 		using sapp
 
-		draw_text_center(
+		draw_text_outlined_center(
 			{0, f32(sapp.height()) - 100},
 			fmt.tprintf("Wave %d", game_data.current_wave),
 			30,
+			4.0,
 		)
-		draw_text_center(
-			{0, f32(sapp.height()) - 135},
+		draw_text_outlined_center(
+			{0, f32(sapp.height()) - 145},
 			fmt.tprintf("Time left %.0f", game_data.time_left_in_wave),
 			30,
+			4.0,
 		)
 
 		set_ui_projection_alignment(.center_center)
@@ -1492,48 +1570,40 @@ game_play :: proc() {
 				log("pickup radius", game_data.money_pickup_radius)
 				log("stun time", game_data.enemy_stun_time)
 				log("reload speed", game_data.time_to_reload)
+				setup_scene_props()
 			}
 
 		}
 
 		if game_data.ui_state == .pause_menu {
-			draw_rect_bordered_center_xform(
-				transform_2d(V2_ZERO),
-				{400, 500},
-				10,
-				COLOR_WHITE,
-				{0.4, 0.4, 0.4, 1},
+			draw_rect_center_xform(
+				transform_2d({0, 0}),
+				{auto_cast sapp.width(), auto_cast sapp.height()},
+				COLOR_BLACK - {0, 0, 0, 0.55},
 			)
+			left_align_padding: f32 = 50
 
-			draw_text_center({0, 180}, "Pause Menu", 40, COLOR_BLACK)
-			button_pos_y: f32 = 50
-			button_font_size: f32 : 24
-			button_margin: f32 : 10
+			left_pos: f32 = -auto_cast sapp.width() * f32(0.5) + left_align_padding
+			button_spacing_y: f32 = 65
 
 
-			button_size := Vector2{200, 60}
+			draw_text_outlined_center({0, 150}, "Paused..", 50, 4.0)
 
-			if bordered_button({0, button_pos_y}, button_size, "Back", button_font_size, 2) {
+			if text_button({left_pos, button_spacing_y}, "Resume", 40, 1) {
 				game_data.ui_state = .none
 			}
+			if text_button({left_pos, 0}, "Options", 40, 2) {
 
-			button_pos_y -= button_margin + button_size.y
-			if bordered_button(
-				{0, button_pos_y},
-				button_size,
-				"Restart run",
-				button_font_size,
-				0,
-			) {
-				restart_run()
 			}
-			button_pos_y -= button_margin + button_size.y
-			bordered_button({0, button_pos_y}, button_size, "Options", button_font_size, 0)
-			button_pos_y -= button_margin + button_size.y
+			if text_button({left_pos, -button_spacing_y}, "Restart", 40, 3) {
+				restart_run()
 
-			if bordered_button({0, button_pos_y}, button_size, "Exit", button_font_size, 1) {
+			}
+			if text_button({left_pos, -button_spacing_y * 2}, "Exit", 40, 4) {
 				sapp.quit()
 			}
+
+
 		}
 
 		if game_data.ui_state == .player_death {
@@ -1584,35 +1654,8 @@ game_play :: proc() {
 	}
 
 
-	{
-		// Base UI
-		set_ui_projection_alignment(.bottom_left)
-		using game_data
-
-		draw_text(
-			Vector2{10, 10},
-			fmt.tprintf("Ammo: %d/%d", game_data.current_bullets_count, game_data.max_bullets),
-			32,
-		)
-		size := measure_text("Ammo", 32)
-		padding: f32 = 10
-		draw_text(
-			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("Health: %.0f/%.0f", player.health, player.max_health),
-			32,
-		)
-		size = measure_text("Health", 32) + size + padding
-		draw_text(
-			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("Stamina: %.1f/%.1f", player.roll_stamina, player.max_roll_stamina),
-			32,
-		)
-		size = measure_text("Stamina", 32) + size + padding
-		draw_text(
-			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("Money: %d", game_data.money),
-			32,
-		)
+	if ui_state.hover_id != 0 {
+		ui_state.hover_time += app_dt
 	}
 
 
@@ -1646,14 +1689,20 @@ MAIN_MENU_CLEAR_COLOR: sg.Color : {1, 1, 1, 1}
 
 UiID :: u32
 
+HOVER_TIME: f32 = 0.3
+
 UiState :: struct {
 	hover_id:        UiID,
+	hover_time:      f32,
 	click_captured:  bool,
 	down_clicked_id: u32,
 }
 
 reset_ui_state :: proc() {
 	ui_state.click_captured = false
+	if ui_state.hover_id == 0 {
+		ui_state.hover_time = 0
+	}
 	ui_state.hover_id = 0
 
 	if inputs.button_just_pressed[sapp.Mousebutton.LEFT] {

@@ -2,6 +2,7 @@ package main
 import sapp "../sokol/app"
 import "core:fmt"
 import "core:math"
+import "core:math/ease"
 import "core:math/linalg"
 
 draw_rect_bordered_center_xform :: proc(
@@ -119,6 +120,80 @@ bordered_button :: proc(
 
 
 	draw_text_center_center(position, text, font_size)
+
+
+	return pressed
+}
+
+TEXT_BUTTON_COLOR: Vector4 : {0.7, 0.7, 0.7, 1}
+TEXT_HOVER_COLOR: Vector4 : COLOR_WHITE
+
+text_button :: proc(
+	position: Vector2,
+	text: string,
+	font_size: f32,
+	id: UiID,
+	disabled: bool = false,
+) -> bool {
+	xform := transform_2d(position)
+
+	size := measure_text(text, font_size) * 1.5
+	center_pos := position + size * 0.5 - {20, 10}
+	color := BUTTON_COLOR
+	if !disabled && aabb_contains(center_pos, size, mouse_world_position) {
+		ui_state.hover_id = id
+		color = BUTTON_HOVER_COLOR
+	}
+	if !disabled && inputs.mouse_down[sapp.Mousebutton.LEFT] && ui_state.hover_id == id {
+		ui_state.down_clicked_id = id
+	}
+
+
+	if ui_state.hover_id == id {
+		t := ui_state.hover_time / HOVER_TIME
+		eased_t: f32 = ease.elastic_out(ui_state.hover_id == id ? t : 0)
+		start_value: f32 = 0.0
+		end_value: f32 = 20.0
+		current_value := start_value + eased_t * (end_value - start_value)
+		draw_quad_xform(
+			transform_2d(position + {current_value + size.x * 0.75, -2.5}),
+			{32, 32},
+			.arrow,
+			DEFAULT_UV,
+		)
+	}
+
+	// if disabled {
+	// 	color = BUTTON_DISABLED_COLOR
+	// }
+
+	pressed := false
+
+	if !disabled &&
+	   ui_state.hover_id == id &&
+	   !ui_state.click_captured &&
+	   inputs.mouse_just_pressed[sapp.Mousebutton.LEFT] &&
+	   ui_state.down_clicked_id == id {
+		pressed = true
+		ui_state.click_captured = true
+	}
+
+	{
+		t := ui_state.hover_time / HOVER_TIME
+		eased_t: f32 = ease.elastic_out(ui_state.hover_id == id ? t * 1 : 0)
+		start_value: f32 = 0.0
+		end_value: f32 = 20.0
+		current_value := start_value + eased_t * (end_value - start_value)
+		draw_text_outlined(
+			position + {current_value, 0},
+			text,
+			font_size,
+			3,
+			4.0,
+			ui_state.hover_id == id ? TEXT_HOVER_COLOR : TEXT_BUTTON_COLOR,
+			COLOR_BLACK,
+		)
+	}
 
 
 	return pressed

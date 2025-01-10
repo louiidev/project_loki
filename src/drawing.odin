@@ -437,7 +437,73 @@ draw_text_center :: proc(
 
 	pos := center_pos - {text_size.x * 0.5, 0}
 
+
 	draw_text(pos, text, font_size, col)
+}
+
+
+draw_text_outlined :: proc(
+	pos: Vector2,
+	text: string,
+	font_size: f32 = DEFAULT_FONT_SIZE,
+	drop_shadow: f32 = 0.0,
+	width: f32 = 4.0,
+	color := COLOR_WHITE,
+	outline_color := COLOR_BLACK,
+) {
+	draw_text(pos + {width, width}, text, font_size, outline_color)
+	draw_text(pos + {width, -width}, text, font_size, outline_color)
+	draw_text(pos + {-width, width}, text, font_size, outline_color)
+	draw_text(pos + {-width, -width}, text, font_size, outline_color)
+
+
+	if width >= 3 {
+		draw_text(pos + {width, 0}, text, font_size, outline_color)
+		draw_text(pos + {0, width}, text, font_size, outline_color)
+		draw_text(pos + {-width, 0}, text, font_size, outline_color)
+		draw_text(pos + {0, -width}, text, font_size, outline_color)
+	}
+
+
+	if drop_shadow > 0.0 {
+		draw_text(pos + {0, -(drop_shadow + width)}, text, font_size, outline_color)
+		draw_text(pos + {-width, -(drop_shadow + width)}, text, font_size, outline_color)
+		draw_text(pos + {width, -(drop_shadow + width)}, text, font_size, outline_color)
+	}
+
+	draw_text(pos, text, font_size, color)
+}
+
+draw_text_outlined_center :: proc(
+	pos: Vector2,
+	text: string,
+	font_size: f32 = DEFAULT_FONT_SIZE,
+	drop_shadow: f32 = 0.0,
+	width: f32 = 4.0,
+	color := COLOR_WHITE,
+	outline_color := COLOR_BLACK,
+) {
+	draw_text_center(pos + {width, width}, text, font_size, outline_color)
+	draw_text_center(pos + {width, -width}, text, font_size, outline_color)
+	draw_text_center(pos + {-width, width}, text, font_size, outline_color)
+	draw_text_center(pos + {-width, -width}, text, font_size, outline_color)
+
+
+	if width >= 3 {
+		draw_text_center(pos + {width, 0}, text, font_size, outline_color)
+		draw_text_center(pos + {0, width}, text, font_size, outline_color)
+		draw_text_center(pos + {-width, 0}, text, font_size, outline_color)
+		draw_text_center(pos + {0, -width}, text, font_size, outline_color)
+	}
+
+
+	if drop_shadow > 0.0 {
+		draw_text_center(pos + {0, -(drop_shadow + width)}, text, font_size, outline_color)
+		draw_text_center(pos + {-width, -(drop_shadow + width)}, text, font_size, outline_color)
+		draw_text_center(pos + {width, -(drop_shadow + width)}, text, font_size, outline_color)
+	}
+
+	draw_text_center(pos, text, font_size, color)
 }
 
 draw_text :: proc(

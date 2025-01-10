@@ -26,6 +26,20 @@ PermanenceType :: enum {
 	enemy_body,
 	explosion,
 	blood,
+	prop,
+}
+
+
+create_prop_permanence :: proc(prop: EnvironmentProp) {
+	perm: Permanence
+	perm.active = true
+	perm.position = prop.position
+	perm.type = .prop
+	perm.life_time = 15
+	perm.max_life_time = 15
+
+	perm.frame = {1, auto_cast prop.type}
+	append(&game_data.permanence, perm)
 }
 
 
@@ -118,6 +132,32 @@ render_update_permanence :: proc(dt: f32) {
 
 
 		switch permanence.type {
+
+		case .prop:
+			alpha: f32 = 0.0
+			max_alpha: f32 = 1.0
+			alpha = math.lerp(
+				alpha,
+				max_alpha,
+				1.0 - permanence.life_time / permanence.max_life_time,
+			)
+
+			flash_amount: f32 = permanence.life_time >= permanence.max_life_time - 0.3 ? 1 : 0
+
+			uv := get_frame_uvs(
+				.environment_prop,
+				permanence.frame,
+				{SPRITE_PIXEL_SIZE, SPRITE_PIXEL_SIZE},
+			)
+			draw_quad_center_xform(
+				transform_2d(permanence.position, permanence.rotation),
+				{18, 18},
+				.environment_prop,
+				uv,
+				{0.9, 0.9, 0.9, 1.0} - {alpha, alpha, alpha, alpha},
+				flash_amount,
+			)
+
 		case .bullet_shell:
 			alpha: f32 = 0.0
 			max_alpha: f32 = 1.0
