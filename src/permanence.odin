@@ -76,7 +76,7 @@ create_enemybody_permanence :: proc(e: ^Enemy, velocity: Vector2) {
 	perm.life_time = 15
 	perm.max_life_time = 15
 	perm.enemy_type = e.type
-	perm.frame = {4, auto_cast e.type}
+	perm.frame = {1, auto_cast e.type}
 	perm.velocity = velocity
 	append(&game_data.permanence, perm)
 }
@@ -144,11 +144,7 @@ render_update_permanence :: proc(dt: f32) {
 
 			flash_amount: f32 = permanence.life_time >= permanence.max_life_time - 0.3 ? 1 : 0
 
-			uv := get_frame_uvs(
-				.environment_prop,
-				permanence.frame,
-				{SPRITE_PIXEL_SIZE, SPRITE_PIXEL_SIZE},
-			)
+			uv := get_frame_uvs(.environment_prop, permanence.frame, {18, 18})
 			draw_quad_center_xform(
 				transform_2d(permanence.position, permanence.rotation),
 				{18, 18},
@@ -205,7 +201,7 @@ render_update_permanence :: proc(dt: f32) {
 
 			flash_amount: f32 = permanence.life_time >= permanence.max_life_time - 0.3 ? 1 : 0
 
-			uv := get_frame_uvs(.enemies, permanence.frame, {SPRITE_PIXEL_SIZE, SPRITE_PIXEL_SIZE})
+			uv := get_frame_uvs(.enemies, permanence.frame, {18, 18})
 			draw_quad_center_xform(
 				transform_2d(permanence.position, permanence.rotation),
 				{18, 18},

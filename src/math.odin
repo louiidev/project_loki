@@ -377,3 +377,11 @@ hex_to_rgb :: proc(hex: int) -> Vector4 {
 	b := hex & 0xFF
 	return Vector4{f32(r) / 255.0, f32(g) / 255.0, f32(b) / 255.0, 1}
 }
+
+
+matrix_position :: proc(mat: Matrix4) -> Vector2 {
+	return Vector2 {
+		mat[3][0], // Translation in X
+		mat[3][1], // Translation in Y
+	}
+}

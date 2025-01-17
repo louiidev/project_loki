@@ -1,5 +1,6 @@
 package main
 
+import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
@@ -52,7 +53,7 @@ EnemyType :: enum {
 
 create_bat :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(2, position)
+	enemy.entity = create_entity(20, position)
 	enemy.type = .BAT
 	enemy.speed = 28
 	enemy.weapon_cooldown_timer = 10
@@ -63,7 +64,7 @@ create_bat :: proc(position: Vector2) -> Enemy {
 
 create_crawler :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(2, position)
+	enemy.entity = create_entity(20, position)
 	enemy.type = .CRAWLER
 	enemy.speed = 20
 	enemy.id = last_id
@@ -72,7 +73,7 @@ create_crawler :: proc(position: Vector2) -> Enemy {
 
 create_bull :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(5, position)
+	enemy.entity = create_entity(50, position)
 	enemy.type = .BULL
 	enemy.speed = 18
 
@@ -83,7 +84,7 @@ create_bull :: proc(position: Vector2) -> Enemy {
 
 create_slug :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(5, position)
+	enemy.entity = create_entity(50, position)
 	enemy.type = .SLUG
 	enemy.speed = 15
 	enemy.id = last_id
@@ -92,7 +93,7 @@ create_slug :: proc(position: Vector2) -> Enemy {
 
 create_bby_slug :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(1, position)
+	enemy.entity = create_entity(10, position)
 	enemy.type = .BBY_SLUG
 	enemy.speed = 20
 	enemy.id = last_id
@@ -101,7 +102,7 @@ create_bby_slug :: proc(position: Vector2) -> Enemy {
 
 create_barrel_crawler :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(1, position)
+	enemy.entity = create_entity(10, position)
 	enemy.type = .BARREL_CRAWLER
 	enemy.speed = 15
 	enemy.id = last_id
@@ -110,7 +111,7 @@ create_barrel_crawler :: proc(position: Vector2) -> Enemy {
 
 create_jumper :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(3, position)
+	enemy.entity = create_entity(30, position)
 	enemy.type = .JUMPER
 	enemy.speed = 18
 	enemy.id = last_id
@@ -122,7 +123,7 @@ create_jumper :: proc(position: Vector2) -> Enemy {
 
 create_gunner :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(2, position)
+	enemy.entity = create_entity(20, position)
 	enemy.type = .GUNNER
 	enemy.speed = 25
 	enemy.id = last_id
@@ -210,7 +211,7 @@ crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	entity.state = .WALKING
 
 	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1)
+		damage_player(1, .physical)
 	}
 }
 
@@ -220,7 +221,7 @@ slug_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	entity.state = .WALKING
 
 	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1)
+		damage_player(1, .physical)
 	}
 }
 
@@ -230,7 +231,7 @@ bby_slug_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	entity.state = .WALKING
 
 	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1)
+		damage_player(1, .physical)
 	}
 }
 
@@ -330,7 +331,7 @@ gunner_update_logic :: proc(entity: ^Enemy, dt: f32) {
 			if entity.bullets_fired <= GUNNER_BULLETS_PER_ATTACK {
 
 				if run_every_seconds(0.2) {
-					play_sound("event:/gunshot")
+					play_sound("event:/enemy_gunshot", entity.position)
 					rotation_z := calc_rotation_to_target(target_position, entity.position)
 					rotation_with_randomness :=
 						rotation_z + math.to_radians(rand.float32_range(-10, 10))
@@ -426,13 +427,13 @@ bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	}
 
 	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1)
+		damage_player(1, .physical)
 	}
 }
 
 cactus_update_logic :: proc(entity: ^Entity, dt: f32) {
 	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1)
+		damage_player(1, .physical)
 	}
 }
 
@@ -589,11 +590,30 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 
 
 damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
-	e.health -= damage_to_deal
 
+	dmg := damage_to_deal
+	scale: f32 = 1.0
+	color := COLOR_WHITE
+	// e.g if this is 10 then 
+	if math.min(game_data.crit_chance, PLAYER_MAX_CRIT_CHANCE) >= rand.float32_range(0.0, 100) {
+		dmg += damage_to_deal * 0.45
+		scale = 1.3
+		color = hex_to_rgb(0xe84444)
+	}
+
+	e.health -= dmg
+
+	popup_txt: PopupText = DEFAULT_POPUP_TXT
+	popup_txt.active = true
+	popup_txt.text = fmt.tprintf("%d", int(dmg))
+	popup_txt.alpha = 1.0
+	popup_txt.scale = scale
+	popup_txt.position = e.position
+	popup_txt.color = color
+	append(&game_data.popup_text, popup_txt)
 
 	if e.health <= 0 {
-		create_enemybody_permanence(e, bullet_velocity)
+		create_enemybody_permanence(e, bullet_velocity * 0.5)
 	} else {
 		knockback_enemy(e, linalg.normalize(bullet_velocity))
 	}

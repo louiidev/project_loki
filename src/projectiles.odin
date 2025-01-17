@@ -44,7 +44,7 @@ create_player_projectile :: proc(
 	projectile.rotation = rotation
 	projectile.velocity = direction * game_data.bullet_velocity
 	projectile.target = .ENEMY
-	projectile.damage_to_deal = 1
+	projectile.damage_to_deal = 10
 	projectile.last_hit_ent_id = last_hit_id
 	projectile.hits = hits
 	projectile.bounce_count = bounce_count
@@ -65,7 +65,7 @@ create_quintuple_projectiles :: proc(position: Vector2, target: ProjectileTarget
 		projectile.rotation = 0.0
 		projectile.velocity = linalg.normalize(direction) * 30
 		projectile.target = target
-		projectile.damage_to_deal = 1
+		projectile.damage_to_deal = 10
 		projectile.last_hit_ent_id = 0
 		projectile.hits = 0
 		projectile.bounce_count = 0

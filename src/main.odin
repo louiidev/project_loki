@@ -12,12 +12,12 @@ import stime "../sokol/time"
 import "base:runtime"
 import "core:fmt"
 import "core:math"
+import "core:math/ease"
 import "core:math/linalg"
 import "core:math/rand"
 import "core:strconv"
 import "core:strings"
 import t "core:time"
-
 
 log :: fmt.println
 
@@ -35,6 +35,7 @@ Entity :: struct {
 	id:                       u32,
 	speed:                    f32,
 	speed_while_shooting:     f32,
+	current_speed:            f32,
 	roll_speed:               f32,
 	health:                   f32,
 	max_health:               f32,
@@ -54,17 +55,6 @@ Entity :: struct {
 	i_frame_timer:            f32,
 	reload_timer:             f32,
 	scale_x:                  f32,
-}
-
-
-PropType :: enum {
-	CACTUS,
-	BARREL,
-}
-
-EnvironmentProp :: struct {
-	using _: BaseEntity,
-	type:    PropType,
 }
 
 
@@ -92,19 +82,35 @@ Camera :: struct {
 }
 
 
+MAX_POPUP_TEXT_LIFE_TIME: f32 : 1.0
+PopupText :: struct {
+	using _:   BaseEntity,
+	alpha:     f32,
+	text:      string,
+	color:     Vector4,
+	life_time: f32,
+	scale:     f32,
+}
+
+DEFAULT_POPUP_TXT: PopupText : {active = true, color = COLOR_WHITE, scale = 1.0}
+
 // UPGRADES INITIAL VALUES
 PLAYER_INITIAL_BULLETS :: 6
 PLAYER_INITIAL_BULLET_RANGE: f32 : 100
 PLAYER_INITIAL_BULLET_SPREAD: f32 : 12.0
 PLAYER_INITIAL_RELOAD_TIME :: 1.0
 PLAYER_MIN_POSSIBLE_RELOAD_TIME :: 0.1
-PLAYER_INITIAL_BULLET_VELOCITY :: 280.0
+PLAYER_INITIAL_BULLET_VELOCITY :: 500.0
 PLAYER_INITIAL_FIRE_RATE :: 0.2
-PLAYER_INITIAL_PICKUP_RADIUS :: 19
-PLAYER_WALK_SPEED :: 50
+PLAYER_INITIAL_PICKUP_RADIUS :: 30
+PLAYER_INITIAL_CRIT_CHANCE: f32 : 7.5
+PLAYER_MAX_CRIT_CHANCE: f32 : 75.5
+PLAYER_WALK_SPEED :: 80
+PLAYER_WALK_SHOOTING_SPEED :: 80 * 0.25
+PLAYER_SPEED_REDUCATION_PER_FRAME: f32 : 70.0
+PLAYER_SPEED_ADDITION_PER_FRAME: f32 : 120.0
 PLAYER_ROLL_SPEED :: 100
-INITAL_ROLL_STAMINIA :: 2
-ROLL_STAMINIA_ADD_ON_SHOT :: 0.1
+PLAYER_ROLLDOWN_COOLDOWN :: 0.1
 
 PLAYER_GUN_MOVE_DIST: f32 : 8.0
 
@@ -113,10 +119,13 @@ SPRITE_PIXEL_SIZE :: 16
 
 PLAYER_KNOCKBACK_VELOCITY :: 120
 
-EXPLOSION_DMG_AMOUNT :: 2
+EXPLOSION_DMG_AMOUNT :: 20
 
 REROLL_COST_MODIFIER :: 2
 
+
+IDLE_ANIMATION_TIME :: 0.6
+IDLE_ANIMATION_FRAMES :: 2
 WALK_ANIMATION_TIME :: 0.08
 WALK_ANIMATION_FRAMES :: 6
 ROLLING_ANIMATION_TIME :: 0.08
@@ -132,7 +141,7 @@ INITIAL_WAVE_TIME :: 30
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
 SPAWN_INDICATOR_TIME: f32 : 0.90
-LEVEL_BOUNDS: Vector2 : {448, 240}
+LEVEL_BOUNDS: Vector2 : {496, 270}
 HALF_BOUNDS: Vector2 : {LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.y * 0.5}
 
 WALLS: [4]Vector4 : {
@@ -148,13 +157,10 @@ DEBUG_NO_ENEMIES :: false
 DEFAULT_ENT :: Entity {
 	active                   = true,
 	speed                    = PLAYER_WALK_SPEED,
-	speed_while_shooting     = PLAYER_WALK_SPEED * 0.25,
+	speed_while_shooting     = PLAYER_WALK_SHOOTING_SPEED,
+	current_speed            = PLAYER_WALK_SPEED,
 	roll_speed               = PLAYER_ROLL_SPEED,
-	roll_stamina             = INITAL_ROLL_STAMINIA,
-	max_roll_stamina         = INITAL_ROLL_STAMINIA,
 	max_weapon_cooldown_time = PLAYER_INITIAL_FIRE_RATE,
-	health                   = 2,
-	max_health               = 2.,
 	collision_radius         = 4,
 }
 
@@ -168,9 +174,15 @@ Explosion :: struct {
 }
 
 
+MONEY_ANIM_FRAMES :: 8
+MONEY_ANIM_TIME_PER_FRAME: f32 : 0.1
 MoneyPickup :: struct {
-	using _:   BaseEntity,
-	picked_up: bool,
+	using _:                 BaseEntity,
+	picked_up:               bool,
+	current_animation_frame: int,
+	current_animation_timer: f32,
+	start_pos:               Vector2,
+	current_pickup_time:     f32,
 }
 
 GameRunState :: struct {
@@ -180,11 +192,13 @@ GameRunState :: struct {
 	environment_prop:                     [dynamic]EnvironmentProp,
 	sprite_particles:                     [dynamic]SpriteParticle,
 	permanence:                           [dynamic]Permanence,
+	popup_text:                           [dynamic]PopupText,
 	player:                               Entity,
 	money_pickups:                        [dynamic]MoneyPickup,
 	enemy_spawn_timer:                    f32,
 	money:                                int,
 	ticks:                                u64,
+	rolldown_cooldown_timer:              f32,
 
 	// waves
 	current_wave:                         int,
@@ -206,6 +220,7 @@ GameRunState :: struct {
 	bullet_range:                         f32,
 	time_to_reload:                       f32,
 	enemy_stun_time:                      f32,
+	crit_chance:                          f32,
 
 
 	// camera shake
@@ -239,7 +254,7 @@ restart_run :: proc() {
 
 setup_run :: proc() {
 	game_data = {}
-	game_data.player = create_entity(2)
+	game_data.player = create_entity(20)
 	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
 	game_data.max_bullets = PLAYER_INITIAL_BULLETS
 	game_data.bullet_range = PLAYER_INITIAL_BULLET_RANGE
@@ -250,31 +265,12 @@ setup_run :: proc() {
 	game_data.bullet_velocity = PLAYER_INITIAL_BULLET_VELOCITY
 	game_data.bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
 	game_data.time_to_reload = PLAYER_INITIAL_RELOAD_TIME
+	game_data.crit_chance = PLAYER_INITIAL_CRIT_CHANCE
 	game_data.camera_zoom = 1.0
 	game_data.enemy_stun_time = INITIAL_STUN_TIME
 	setup_scene_props()
 }
 
-
-setup_scene_props :: proc() {
-
-	amount_to_spawn := rand.int_max(5) + 3
-
-	for i := 0; i < amount_to_spawn; i += 1 {
-
-		prop_type := rand.int_max(len(PropType))
-		position: Vector2 = {
-			rand.float32_range(-LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.x * 0.5),
-			rand.float32_range(-LEVEL_BOUNDS.y * 0.5, LEVEL_BOUNDS.y * 0.5),
-		}
-
-		prop: EnvironmentProp
-		prop.type = auto_cast prop_type
-		prop.active = true
-		prop.position = position
-		append(&game_data.environment_prop, prop)
-	}
-}
 
 generate_new_shop_upgrades :: proc() {
 
@@ -294,10 +290,11 @@ generate_new_shop_upgrades :: proc() {
 
 
 	for i := 0; i < len(game_data.next_upgrades); i += 1 {
+		upgrade: Upgrade = upgrades_bag[rand.int_max(len(upgrades_bag))]
 		game_data.next_upgrades[i] = {
-			upgrade   = upgrades_bag[rand.int_max(len(upgrades_bag))],
+			upgrade   = upgrade,
 			purchased = false,
-			cost      = 2,
+			cost      = get_upgrade_cost(upgrade) + get_upgrade_cost_additional(upgrade),
 		}
 
 
@@ -313,6 +310,16 @@ generate_new_shop_upgrades :: proc() {
 	}
 }
 
+
+primary_color: Vector4
+secondary_color: Vector4
+background_color: Vector4
+clear_color: sg.Color
+
+vec_to_color :: proc(color: Vector4) -> sg.Color {
+	return sg.Color{color.r, color.g, color.b, color.a}
+}
+
 init :: proc "c" () {
 	context = runtime.default_context()
 	sg.setup(
@@ -322,6 +329,10 @@ init :: proc "c" () {
 			d3d11_shader_debugging = ODIN_DEBUG,
 		},
 	)
+	primary_color = hex_to_rgb(0xfff3f3)
+	secondary_color = hex_to_rgb(0xa07cff)
+	background_color = hex_to_rgb(0xbf704d)
+	clear_color = vec_to_color(background_color)
 	stime.setup()
 	gfx_init()
 	init_images()
@@ -364,7 +375,7 @@ create_explosion :: proc(position: Vector2) {
 	explosion.max_lifetime = EXPLOSION_LIFETIME
 	explosion.active = true
 	append(&game_data.explosions, explosion)
-	play_sound("event:/explosion")
+	play_sound("event:/explosion", position)
 
 	for &enemy in game_data.enemies {
 		if circles_overlap(
@@ -387,14 +398,19 @@ create_explosion :: proc(position: Vector2) {
 		explosion.position,
 		explosion.size * 0.5,
 	) {
-		damage_player(EXPLOSION_DMG_AMOUNT)
+		damage_player(EXPLOSION_DMG_AMOUNT, .projectile)
 	}
 
 	create_explosion_permanence(&explosion)
 }
 
 
-damage_player :: proc(damage_amount: f32) {
+DamageType :: enum {
+	physical,
+	projectile,
+}
+
+damage_player :: proc(damage_amount: f32, dmg_type: DamageType) {
 	using game_data
 	if player.i_frame_timer <= 0 && player.animation_state != .ROLLING {
 		player.health -= damage_amount
@@ -403,6 +419,21 @@ damage_player :: proc(damage_amount: f32) {
 		if player.health <= 0 {
 			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_UI
 			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_ANIMATION
+		}
+	}
+
+	if dmg_type == .physical {
+		knockback_enemies_in_radius(&player, 30)
+	}
+
+
+}
+
+
+knockback_enemies_in_radius :: proc(player: ^Entity, radius: f32) {
+	for &enemy in game_data.enemies {
+		if circles_overlap(player.position, radius, enemy.position, enemy.collision_radius) {
+			knockback_enemy(&enemy, linalg.normalize(enemy.position - player.position))
 		}
 	}
 }
@@ -434,32 +465,28 @@ knockback_logic_update :: proc(
 }
 
 
+wrap_animations :: proc(ent: ^Entity, dt: f32, animation_time: f32, frames: int) {
+
+	if ent.current_animation_timer > animation_time {
+		ent.current_animation_timer = 0
+		if ent.current_animation_frame >= frames - 1 {
+			ent.current_animation_frame = 0
+		} else {
+			ent.current_animation_frame += 1
+		}
+	}
+}
+
+
 update_player_animations :: proc(ent: ^Entity, dt: f32) {
 
 	switch (ent.animation_state) {
 	case .IDLE:
-		ent.current_animation_timer = 0
-		ent.current_animation_frame = 0
+		wrap_animations(ent, dt, IDLE_ANIMATION_TIME, IDLE_ANIMATION_FRAMES)
 	case .ROLLING:
-		if ent.current_animation_timer > ROLLING_ANIMATION_TIME {
-			ent.current_animation_timer = 0
-			if ent.current_animation_frame >= ROLLING_ANIMATION_FRAMES - 1 {
-				ent.current_animation_frame = 0
-			} else {
-				ent.current_animation_frame += 1
-			}
-		}
+		wrap_animations(ent, dt, ROLLING_ANIMATION_TIME, ROLLING_ANIMATION_FRAMES)
 	case .WALKING:
-		if ent.current_animation_timer > WALK_ANIMATION_TIME {
-			ent.current_animation_timer = 0
-			if ent.current_animation_frame >= WALK_ANIMATION_FRAMES - 1 {
-
-				ent.current_animation_frame = 0
-			} else {
-
-				ent.current_animation_frame += 1
-			}
-		}
+		wrap_animations(ent, dt, WALK_ANIMATION_TIME, WALK_ANIMATION_FRAMES)
 	}
 }
 
@@ -586,15 +613,14 @@ cleanup_scene :: proc() {
 }
 
 
-GAMEPLAY_CLEAR_COLOR: sg.Color : {0.89, 0.7, 0.3, 1.0}
 game_play :: proc() {
-	clear_color = GAMEPLAY_CLEAR_COLOR
 	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
 	ticks_per_second = u64(1.0 / dt)
 	ticks_per_second = clamp(ticks_per_second, 60, 240)
 	defer game_data.ticks += 1
-	defer game_data.world_time_elapsed += dt
 	app_dt: f32 = dt
+	defer game_data.world_time_elapsed += app_dt
+
 	particle_dt: f32 = dt
 
 
@@ -663,7 +689,7 @@ game_play :: proc() {
 
 
 		if game_data.time_left_in_wave > SPAWN_INDICATOR_TIME + 0.5 {
-			amount_to_spawn: int = rand.int_max(10) + 1
+			amount_to_spawn: int = rand.int_max(4) + 1
 			spawn_enemy_group(amount_to_spawn)
 		}
 
@@ -744,10 +770,11 @@ game_play :: proc() {
 				color := COLOR_WHITE
 				if !is_within_bounds(tile_pos.xy) {
 					color.a = 0.3
-					color.rgb -= 0.5
+					// color.rgb -= 0.5
+					// draw_quad_xform(xform, {18, 16}, .tiles, DEFAULT_UV, color)
 				}
 
-				draw_quad_xform(xform, {16, 16}, .tiles, DEFAULT_UV, color)
+
 			}
 		}
 	}
@@ -760,6 +787,10 @@ game_play :: proc() {
 	{
 		// PERMANENCE
 		render_update_permanence(dt)
+	}
+
+	{
+		update_render_props()
 	}
 
 	if game_data.ui_state == .none {
@@ -776,12 +807,43 @@ game_play :: proc() {
 				money.picked_up = true
 				game_data.money += 1
 				game_data.money_earned += 1
+				money.start_pos = money.position
+
+			}
+			money.current_animation_timer += dt
+			if money.current_animation_timer > MONEY_ANIM_TIME_PER_FRAME {
+				money.current_animation_timer = 0
+				if money.current_animation_frame >= MONEY_ANIM_FRAMES - 1 {
+					money.current_animation_frame = 0
+				} else {
+					money.current_animation_frame += 1
+				}
 			}
 
 			if money.picked_up {
-				animate_v2_to_target(&money.position, game_data.player.position, dt, 15)
+
+				time_to_pickup: f32 = 0.75
+				money.current_pickup_time += dt
+				t: f32 = money.current_pickup_time / time_to_pickup
+				eased_t := ease.exponential_in(t)
+
+				start_value_x: f32 = money.start_pos.x
+				end_value_x: f32 = game_data.player.position.x
+				current_value_x := start_value_x + eased_t * (end_value_x - start_value_x)
+
+
+				start_value_y: f32 = money.start_pos.y
+				end_value_y: f32 = game_data.player.position.y
+				current_value_y := start_value_y + eased_t * (end_value_y - start_value_y)
+
+				money.position = {current_value_x, current_value_y}
 				if linalg.distance(money.position, game_data.player.position) <= 4 {
 					money.active = false
+					popup_txt: PopupText = DEFAULT_POPUP_TXT
+					popup_txt.text = fmt.tprintf("$%d", 1)
+					popup_txt.color = hex_to_rgb(0xffd569)
+					popup_txt.position = money.position
+					append(&game_data.popup_text, popup_txt)
 				}
 			}
 
@@ -789,10 +851,11 @@ game_play :: proc() {
 			draw_pos.y += sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 6
 			xform := translate_mat4({draw_pos.x, draw_pos.y, 0.0})
 
-
-			draw_quad_center_xform(xform, {16, 16}, .money, DEFAULT_UV, COLOR_WHITE)
+			uvs := get_frame_uvs(.money, {money.current_animation_frame, 0}, {16, 16})
+			draw_quad_center_xform(xform, {12, 12}, .money, uvs, COLOR_WHITE)
 		}
 	}
+
 
 	{
 		using sapp.Keycode
@@ -813,7 +876,7 @@ game_play :: proc() {
 			if player.animation_state != .ROLLING {
 				player.animation_state = .WALKING
 			}
-		} else {
+		} else if player.animation_state != .IDLE {
 			set_ent_animation_state(&player, .IDLE)
 		}
 
@@ -863,7 +926,15 @@ game_play :: proc() {
 		attack_position: Vector2 = player.position + {delta_x, -delta_y}
 
 		if inputs.mouse_down[Mousebutton.LEFT] || player.weapon_cooldown_timer > 0 {
-			speed = player.speed_while_shooting
+			player.current_speed = math.max(
+				player.speed_while_shooting,
+				player.current_speed - PLAYER_SPEED_REDUCATION_PER_FRAME * dt,
+			)
+		} else {
+			player.current_speed = math.min(
+				player.speed,
+				player.current_speed + PLAYER_SPEED_ADDITION_PER_FRAME * dt,
+			)
 		}
 
 		if game_data.current_bullets_count == 0 {
@@ -914,7 +985,7 @@ game_play :: proc() {
 		}
 
 
-		potential_pos := player.position + player_input * dt * speed
+		potential_pos := player.position + player_input * dt * player.current_speed
 
 		// left wall
 		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[0]) {
@@ -937,20 +1008,13 @@ game_play :: proc() {
 			player_input.y = math.min(0, player_input.y)
 		}
 
-		player.position = player.position + player_input * dt * speed
+		player.position = player.position + player_input * dt * player.current_speed
 
 
-		frame_x := 0
-		frame_y := 0
+		frame_x := player.current_animation_frame
+		frame_y: int = auto_cast player.animation_state
 
-		if player.animation_state == .WALKING {
-			frame_x = player.current_animation_frame + 1
-		} else if player.animation_state == .ROLLING {
-			frame_y = 1
-			frame_x = player.current_animation_frame
-		}
-
-		uvs := get_frame_uvs(.player, {frame_x, frame_y}, {16, 16})
+		uvs := get_frame_uvs(.player, {frame_x, frame_y}, {18, 18})
 		flash_amount: f32 = 0
 		if player.i_frame_timer > 0 {
 			flash_amount = 1
@@ -960,13 +1024,11 @@ game_play :: proc() {
 		if player.active {
 
 			flip_x := mouse_world_position.x < game_data.player.position.x
-			flip_x_value: f32 = flip_x ? -1.0 : 1.0
 
-			player.scale_x = math.lerp(player.scale_x, flip_x_value, dt * 10)
-			xform := transform_2d(game_data.player.position, 0, {player.scale_x, 1.0})
+			xform := transform_2d(game_data.player.position, 0, {flip_x ? -1 : 1, 1})
 			draw_quad_center_xform(
 				xform,
-				{auto_cast 16, auto_cast 16},
+				{auto_cast 18, auto_cast 18},
 				.player,
 				uvs,
 				COLOR_WHITE,
@@ -1051,24 +1113,6 @@ game_play :: proc() {
 		}
 	}
 
-
-	{
-		//@enviroment_props
-		for &prop in &game_data.environment_prop {
-			if !prop.active {
-				continue
-			}
-			uvs := get_frame_uvs(.environment_prop, {0, auto_cast prop.type}, {16, 16})
-			draw_quad_center_xform(
-				transform_2d(prop.position),
-				{16, 16},
-				.environment_prop,
-				uvs,
-				COLOR_WHITE,
-			)
-		}
-	}
-
 	{
 		// @enemies
 		for &enemy in game_data.enemies {
@@ -1122,7 +1166,7 @@ game_play :: proc() {
 			if game_data.player.active &&
 			   game_data.timer_to_show_player_death_animation <= 0 &&
 			   enemy.attack_direction == V2_ZERO {
-				enemy.flip_x = enemy.position.x > game_data.player.position.x
+				enemy.flip_x = enemy.position.x < game_data.player.position.x
 			}
 
 
@@ -1159,11 +1203,10 @@ game_play :: proc() {
 				cos_breathe_alpha(game_data.world_time_elapsed * 0.5) * 0.05 -
 				sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 0.05
 
-			flip_x_value: f32 = enemy.flip_x ? -1.0 : 1.0
-			enemy.scale_x = math.lerp(enemy.scale_x, flip_x_value, dt * 10)
 
 			// RENDER ENEMIES
-			xform := transform_2d(position, 0, {scale.x * enemy.scale_x, scale.y})
+			xform := transform_2d(position, 0, {scale.x, scale.y})
+			shadows_xform := transform_2d(enemy.position + {-1, -3})
 
 			if enemy.state == .WALKING {
 				xform *= transform_2d({-5, -5}, rotation)
@@ -1179,9 +1222,11 @@ game_play :: proc() {
 
 			knockback_logic_update(&enemy, dt, ENEMY_KNOCKBACK_VELOCITY, &enemy.position)
 
-			uvs := get_frame_uvs(.enemies, {0, sprite_y_index}, {16, 16})
+			uvs := get_frame_uvs(.enemies, {0, sprite_y_index}, {18, 18})
+			shadow_uvs := get_frame_uvs(.shadows, {0, sprite_y_index}, {18, 18})
 
-			draw_quad_center_xform(xform, {16, 16}, .enemies, uvs, COLOR_WHITE, flash_amount)
+			draw_quad_center_xform(shadows_xform, {18, 18}, .shadows, shadow_uvs, COLOR_WHITE)
+			draw_quad_center_xform(xform, {18, 18}, .enemies, uvs, COLOR_WHITE, flash_amount)
 
 
 			if enemy.type == .GUNNER {
@@ -1203,7 +1248,9 @@ game_play :: proc() {
 
 				xform *=
 					linalg.matrix4_rotate(weapon_rotation_angle, Vector3{0, 0, 1}) *
+					linalg.matrix4_scale_f32({1, -1, 1}) *
 					linalg.matrix4_translate_f32({-5, -12, 0.0})
+
 
 				weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
 				draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
@@ -1226,7 +1273,7 @@ game_play :: proc() {
 
 	{
 		// PROJECTILES
-		for &p in game_data.projectiles {
+		for &p in &game_data.projectiles {
 			distance_this_frame := p.velocity * dt
 			p.position += distance_this_frame
 			p.current_distance_traveled += linalg.length(distance_this_frame)
@@ -1235,7 +1282,6 @@ game_play :: proc() {
 			if p.current_distance_traveled > p.distance_limit {
 				p.active = false
 				create_bullet_death(&p)
-				log("create_bullet_death")
 				continue
 			}
 
@@ -1252,7 +1298,7 @@ game_play :: proc() {
 			}
 
 			if p.target == .ENEMY {
-				spawn_bullet_partciles(p.position, hex_to_rgb(0xffed73), p.velocity)
+				// spawn_bullet_partciles(p.position, hex_to_rgb(0xffed73), p.velocity)
 			}
 
 
@@ -1294,6 +1340,8 @@ game_play :: proc() {
 							p.hits += 1
 							p.last_hit_ent_id = e.id
 						}
+
+
 						damage_enemy(&e, p.damage_to_deal, p.velocity)
 
 
@@ -1305,10 +1353,7 @@ game_play :: proc() {
 							spawn_particles(e.position, COLOR_WHITE)
 
 						}
-						game_data.player.roll_stamina = math.min(
-							game_data.player.roll_stamina + ROLL_STAMINIA_ADD_ON_SHOT,
-							game_data.player.max_roll_stamina,
-						)
+
 						break
 					}
 				}
@@ -1325,17 +1370,22 @@ game_play :: proc() {
 				// PLAYER dmg
 
 				p.active = false
-				damage_player(1)
+				damage_player(1, .projectile)
 			}
 
 			for &prop in game_data.environment_prop {
+
+				if !prop.active || !prop.destructible {
+					continue
+				}
+
 				if prop.active && circles_overlap(p.position, 5, prop.position, 5) {
-					if prop.type == .CACTUS {
+					if prop.type == .cactus {
 						create_quintuple_projectiles(prop.position, .ALL)
 
 					}
 
-					if prop.type == .BARREL {
+					if prop.type == .tnt {
 						create_explosion(prop.position)
 					}
 					create_prop_permanence(prop)
@@ -1354,7 +1404,7 @@ game_play :: proc() {
 				{p.sprite_cell_start.x + p.current_frame, p.sprite_cell_start.y},
 				{16, 16},
 			)
-			draw_quad_center_xform(xform, {auto_cast 16, auto_cast 16}, .projectiles, uvs)
+			draw_quad_center_xform(xform, {auto_cast 18, auto_cast 18}, .projectiles, uvs)
 		}
 
 
@@ -1425,6 +1475,41 @@ game_play :: proc() {
 		}
 	}
 
+	{
+		for &popup_txt in game_data.popup_text {
+			popup_txt.life_time += dt
+
+
+			t := popup_txt.life_time / MAX_POPUP_TEXT_LIFE_TIME
+			eased_t := ease.cubic_in(t)
+
+			start_value: f32 = 0.0
+			end_value: f32 = 10.0
+			current_value := start_value + eased_t * (end_value - start_value)
+			start_alpha_value: f32 = 1.0
+			end_alpha_value: f32 = 0.0
+			current_alpha_value :=
+				start_alpha_value + eased_t * (end_alpha_value - start_alpha_value)
+			color := popup_txt.color
+			border_color := COLOR_BLACK
+			color.a = current_alpha_value
+			border_color.a = current_alpha_value
+
+			if popup_txt.life_time >= MAX_POPUP_TEXT_LIFE_TIME {
+				popup_txt.active = false
+			}
+			draw_text_outlined_center(
+				transform_2d(popup_txt.position + {0, current_value}),
+				popup_txt.text,
+				8 * popup_txt.scale,
+				0.5 * popup_txt.scale,
+				0.5 * popup_txt.scale,
+				color,
+				border_color,
+			)
+		}
+	}
+
 
 	draw_frame.camera_xform = identity()
 
@@ -1434,31 +1519,46 @@ game_play :: proc() {
 		// Base UI
 		set_ui_projection_alignment(.bottom_left)
 		using game_data
-
-		draw_text(
-			Vector2{10, 10},
-			fmt.tprintf("Ammo: %d/%d", game_data.current_bullets_count, game_data.max_bullets),
+		base_pos_y := 0.9 * f32(sapp.height())
+		padding: f32 = 8
+		draw_quad_xform(
+			transform_2d({10, base_pos_y}),
+			{64, 64},
+			.ui,
+			get_frame_uvs(.ui, {0, 0}, {16, 16}),
+		)
+		draw_text_outlined(
+			transform_2d({50, base_pos_y}),
+			fmt.tprintf("Money: $%d", game_data.money),
 			32,
 		)
-		size := measure_text("Ammo", 32)
-		padding: f32 = 10
-		draw_text(
-			Vector2{10, 10 + size.y + padding},
+
+		draw_quad_xform(
+			transform_2d({10, base_pos_y - (64 + padding)}),
+			{64, 64},
+			.ui,
+			get_frame_uvs(.ui, {0, 1}, {16, 16}),
+		)
+
+		draw_text_outlined(
+			transform_2d({50, base_pos_y - (64 + padding)}),
 			fmt.tprintf("Health: %.0f/%.0f", player.health, player.max_health),
 			32,
 		)
-		size = measure_text("Health", 32) + size + padding
-		draw_text(
-			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("Stamina: %.1f/%.1f", player.roll_stamina, player.max_roll_stamina),
+
+		draw_quad_xform(
+			transform_2d({10, base_pos_y - (64 + padding) * 2}),
+			{64, 64},
+			.ui,
+			get_frame_uvs(.ui, {0, 2}, {16, 16}),
+		)
+
+		draw_text_outlined(
+			transform_2d({50, base_pos_y - (64 + padding) * 2}),
+			fmt.tprintf("Ammo: %d/%d", game_data.current_bullets_count, game_data.max_bullets),
 			32,
 		)
-		size = measure_text("Stamina", 32) + size + padding
-		draw_text(
-			Vector2{10, 10 + size.y + padding},
-			fmt.tprintf("Money: %d", game_data.money),
-			32,
-		)
+
 	}
 
 
@@ -1467,13 +1567,13 @@ game_play :: proc() {
 		using sapp
 
 		draw_text_outlined_center(
-			{0, f32(sapp.height()) - 100},
+			transform_2d({0, f32(sapp.height()) - 100}),
 			fmt.tprintf("Wave %d", game_data.current_wave),
 			30,
 			4.0,
 		)
 		draw_text_outlined_center(
-			{0, f32(sapp.height()) - 145},
+			transform_2d({0, f32(sapp.height()) - 145}),
 			fmt.tprintf("Time left %.0f", game_data.time_left_in_wave),
 			30,
 			4.0,
@@ -1482,83 +1582,170 @@ game_play :: proc() {
 		set_ui_projection_alignment(.center_center)
 		mouse_world_position = mouse_to_matrix()
 		// UPGRADE MENU
+
 		if game_data.ui_state == .upgrade_menu {
+
 
 			box_width: f32 = 250
 			box_height: f32 = 350
-			padding: f32 = 20
+			padding: f32 = 10
 			xform := transform_2d({-box_width - padding, 0.0})
 			position: Vector2 = {-box_width - padding, 0.0}
 
-			button_height: f32 = 60
-			button_width: f32 = 150
+			button_height: f32 = 20 * 4
+			button_width: f32 = 64 * 4
 
+			card_size: Vector2 = {40, 52} * 5
+			card_uv := get_frame_uvs(.card, {0, 0}, card_size / 5)
+			card_disalbed_uv := get_frame_uvs(.card, {1, 0}, card_size / 5)
+			card_shadow_uv := get_frame_uvs(.card, {2, 0}, card_size / 5)
 
 			for i := 0; i < len(game_data.next_upgrades); i += 1 {
-				color := COLOR_WHITE - {0.2, 0.2, 0.2, 0.0}
-
-				draw_rect_bordered_center_xform(xform, {box_width, box_height}, 10.0, color)
-				heading := get_upgrade_heading(game_data.next_upgrades[i].upgrade)
-				description := get_upgrade_description(game_data.next_upgrades[i].upgrade)
+				shadow_size := card_size
+				hover := false
+				id: UiID = auto_cast i + 1
 
 
-				heading_pos := position - {0.0, -box_height * 0.5 + 40 + 10}
-				heading_height := draw_text_constrainted_center(
-					heading_pos,
-					heading,
-					box_width - 50,
-					30,
-					{0, 0, 0, 1},
-				)
-
-				draw_text_constrainted_center(
-					heading_pos - {0, heading_height + 14},
-					description,
-					box_width - 50,
-					20,
-					{0, 0, 0, 1},
-				)
-
-				if bordered_button(
-					position - {0.0, box_height * 0.5 - 40},
-					{button_width, button_height},
-					fmt.tprintf("Buy: $%d", game_data.next_upgrades[i].cost),
-					30,
-					100 + u32(game_data.next_upgrades[i].upgrade) + u32(i * 100),
+				disabled :=
 					game_data.next_upgrades[i].purchased ||
-					game_data.money < game_data.next_upgrades[i].cost,
-				) {
+					game_data.next_upgrades[i].cost > game_data.money
+
+				if !disabled && aabb_contains(position, card_size, mouse_world_position) {
+					ui_state.hover_id = id
+					hover = true
+				}
+
+
+				if !disabled &&
+				   inputs.mouse_down[sapp.Mousebutton.LEFT] &&
+				   ui_state.hover_id == id {
+					ui_state.down_clicked_id = id
+				}
+
+				if !disabled &&
+				   ui_state.hover_id == id &&
+				   !ui_state.click_captured &&
+				   inputs.mouse_just_pressed[sapp.Mousebutton.LEFT] &&
+				   ui_state.down_clicked_id == id {
+					ui_state.click_captured = true
 					purchase_shop_upgrade(&game_data.next_upgrades[i])
 				}
+
+
+				offset: f32 = (auto_cast i * math.PI * 300) + math.PI * 200
+				card_xform := xform
+				shadow_xform := card_xform
+				if !hover {
+					card_xform =
+						xform *
+						transform_2d(
+							{
+								0,
+								sine_breathe_alpha(
+									(game_data.world_time_elapsed + offset) * 0.35,
+								) *
+								25,
+							},
+							(cos_breathe_alpha(game_data.world_time_elapsed * 0.5 + offset) *
+									0.05 -
+								sine_breathe_alpha(game_data.world_time_elapsed * 0.5 + offset) *
+									0.05),
+						)
+
+					shadow_xform = card_xform
+				} else {
+					t := ui_state.hover_time / HOVER_TIME
+					eased_t := ease.elastic_out(t)
+					start_value: f32 = 0.0
+					end_value: f32 = 40.0
+					current_value := start_value + eased_t * (end_value - start_value)
+					shadow_size += current_value * 0.15
+					card_xform =
+						xform *
+						transform_2d(
+							{current_value * 0.1, current_value},
+							(cos_breathe_alpha(game_data.world_time_elapsed * 0.5 + offset) *
+									0.05 -
+								sine_breathe_alpha(game_data.world_time_elapsed * 0.5 + offset) *
+									0.05),
+						)
+
+					shadow_xform =
+						xform *
+						transform_2d(
+							{},
+							(cos_breathe_alpha(game_data.world_time_elapsed * 0.5 + offset) *
+									0.05 -
+								sine_breathe_alpha(game_data.world_time_elapsed * 0.5 + offset) *
+									0.05),
+						)
+				}
+
+				draw_quad_center_xform(
+					shadow_xform * transform_2d({-15, -25}),
+					shadow_size,
+					.card,
+					card_shadow_uv,
+				)
+				draw_quad_center_xform(
+					card_xform,
+					card_size,
+					.card,
+					disabled ? card_disalbed_uv : card_uv,
+				)
+				heading := get_upgrade_heading(game_data.next_upgrades[i].upgrade)
+				description := get_upgrade_description(game_data.next_upgrades[i].upgrade)
+				draw_text_constrainted_center_outlined(
+					card_xform * transform_2d({0, 80}),
+					heading,
+					card_size.x * 0.75,
+					30,
+					4,
+				)
+				draw_text_constrainted_center_outlined(
+					card_xform,
+					description,
+					card_size.x * 0.75,
+					18,
+					2,
+					2,
+				)
+				draw_text_outlined_center(
+					card_xform * transform_2d({0, -80}),
+					fmt.tprintf("$%d", game_data.next_upgrades[i].cost),
+					40,
+					4,
+				)
+
 
 				position += {box_width + padding, 0}
 				xform = xform * transform_2d({box_width + padding, 0.0})
 			}
 
-			if bordered_button(
+			if image_button(
 				{
 					-button_width * 0.5 - padding * 0.5,
 					-box_height * 0.5 - padding * 1.5 - button_height * 0.5,
 				},
-				{button_width, button_height},
 				fmt.tprintf("Reroll shop: $%d", game_data.reroll_cost),
-				16,
-				1,
+				28,
+				10,
+				{button_width, button_height},
 				game_data.reroll_cost > game_data.money,
 			) {
 				game_data.money -= game_data.reroll_cost
 				generate_new_shop_upgrades()
 				game_data.reroll_cost += REROLL_COST_MODIFIER
 			}
-			if bordered_button(
+			if image_button(
 				{
 					button_width * 0.5 + padding * 0.5,
 					-box_height * 0.5 - padding * 1.5 - button_height * 0.5,
 				},
-				{button_width, button_height},
 				"Next Wave",
-				16,
-				2,
+				28,
+				20,
+				{button_width, button_height},
 			) {
 				game_data.current_wave += 1
 				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
@@ -1587,7 +1774,7 @@ game_play :: proc() {
 			button_spacing_y: f32 = 65
 
 
-			draw_text_outlined_center({0, 150}, "Paused..", 50, 4.0)
+			draw_text_outlined_center(transform_2d({0, 150}), "Paused..", 50, 4.0)
 
 			if text_button({left_pos, button_spacing_y}, "Resume", 40, 1) {
 				game_data.ui_state = .none
@@ -1617,20 +1804,25 @@ game_play :: proc() {
 			button_margin: f32 : 15
 			button_size := Vector2{200, 50}
 
-			draw_text_center_center({0, 100}, "PLAYER DEAD", 48)
-			draw_text_center_center({0, 50}, "GAME OVER", 48)
+			draw_text_outlined_center(transform_2d({0, 100}), "PLAYER DEAD", 48)
+			draw_text_outlined_center(transform_2d({0, 50}), "GAME OVER", 48)
 
 			stat_img_x: f32 = 60
 			stat_img_y: f32 = -175
 			draw_quad_center_xform(transform_2d({-stat_img_x, stat_img_y}), {80, 80}, .skull)
-			draw_quad_center_xform(transform_2d({stat_img_x, stat_img_y}), {120, 120}, .money)
+			draw_quad_center_xform(
+				transform_2d({stat_img_x, stat_img_y}),
+				{80, 80},
+				.money,
+				get_frame_uvs(.money, {0, 0}, {16, 16}),
+			)
 			draw_text_center_center(
-				{-stat_img_x + 3, stat_img_y - 50},
+				transform_2d({-stat_img_x + 3, stat_img_y - 50}),
 				fmt.tprintf("%d", game_data.enemies_killed),
 				30,
 			)
 			draw_text_center_center(
-				{stat_img_x + 3, stat_img_y - 50},
+				transform_2d({stat_img_x + 3, stat_img_y - 50}),
 				fmt.tprintf("%d", game_data.money_earned),
 				30,
 			)
@@ -1681,6 +1873,7 @@ game_play :: proc() {
 		cleanup_base_entity(&game_data.explosions)
 		cleanup_base_entity(&game_data.permanence)
 		cleanup_base_entity(&game_data.environment_prop)
+		cleanup_base_entity(&game_data.popup_text)
 	}
 }
 
@@ -1713,7 +1906,7 @@ reset_ui_state :: proc() {
 ui_state: UiState
 
 main_menu :: proc() {
-	clear_color = MAIN_MENU_CLEAR_COLOR
+	// clear_color = MAIN_MENU_CLEAR_COLOR
 	set_ui_projection_alignment(.center_center)
 	mouse_world_position = mouse_to_matrix()
 	start_btn_pos := V2_ZERO

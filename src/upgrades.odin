@@ -37,6 +37,21 @@ get_upgrade_percentage :: proc(upgrade: Upgrade) -> f32 {
 }
 
 
+get_upgrade_cost_additional :: proc(upgrade: Upgrade) -> int {
+	upgrade_amount := game_data.player_upgrade[upgrade]
+
+
+	switch upgrade_amount {
+	case 0 ..= 1:
+		return 0
+	case 2 ..= 4:
+		return 2
+	}
+
+	return 4
+}
+
+
 get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 	switch upgrade {
 	case .BOUNCE_SHOT:
@@ -93,25 +108,25 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 	case .PIERCING_SHOT:
 		return "Pierces through enemies"
 	case .RELOAD_SPEED:
-		return "Upgrades by reload speed by 5%"
+		return fmt.tprintf("Upgrades by reload speed by %.0f%%", percentage)
 	case .ROLL_SPEED:
-		return fmt.tprintf("Upgrades by roll speed by 0.f%", percentage)
+		return fmt.tprintf("Upgrades by roll speed by %.0f%%", percentage)
 	case .ROLL_STAMINIA:
-		return fmt.tprintf("Upgrades the roll staminia by 0.f%", percentage)
+		return fmt.tprintf("Upgrades the roll staminia by %.0f%%", percentage)
 	case .AMMO_UPGRADE:
 		return "Upgrades the ammo by 2+"
 	case .BULLETS:
 		return "Upgrades the amount of bullets you fire by 1+"
 	case .EXPLODING_ENEMIES:
-		return "5%+ chance an enemy explodes on death"
+		return fmt.tprintf("%.0f%% chance an enemy explodes on death", percentage)
 	case .PICKUP_RADIUS:
-		return fmt.tprintf("Increases Radius by 0.f%", percentage)
+		return fmt.tprintf("Increases Radius by %.0f%%", percentage)
 	case .WALKING_SPEED:
-		return fmt.tprintf("Increases Speed by 0.f%", percentage)
+		return fmt.tprintf("Increases Speed by %.0f%%", percentage)
 	case .STUN_TIME:
-		return fmt.tprintf("Increases Stun time by 0.f%", percentage)
+		return fmt.tprintf("Increases Stun time by %.0f%%", percentage)
 	case .BIGGER_BULLETS:
-		return "Increases Bullet size by "
+		return fmt.tprintf("Increases Bullet size by %.0f%%", percentage)
 	}
 
 
@@ -171,8 +186,6 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 
 
 get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
-
-
 	switch upgrade {
 	case .BOUNCE_SHOT:
 		return 5

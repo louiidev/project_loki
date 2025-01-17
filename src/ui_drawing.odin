@@ -119,7 +119,7 @@ bordered_button :: proc(
 	draw_rect_bordered_center_xform(xform, size, BUTTON_BORDER_SIZE, color, BUTTON_BORDER_COLOR)
 
 
-	draw_text_center_center(position, text, font_size)
+	draw_text_center_center(transform_2d(position), text, font_size)
 
 
 	return pressed
@@ -185,7 +185,7 @@ text_button :: proc(
 		end_value: f32 = 20.0
 		current_value := start_value + eased_t * (end_value - start_value)
 		draw_text_outlined(
-			position + {current_value, 0},
+			transform_2d(position + {current_value, 0}),
 			text,
 			font_size,
 			3,
@@ -194,6 +194,58 @@ text_button :: proc(
 			COLOR_BLACK,
 		)
 	}
+
+
+	return pressed
+}
+
+
+image_button :: proc(
+	position: Vector2,
+	text: string,
+	font_size: f32,
+	id: UiID,
+	size: Vector2 = {60, 24},
+	disabled: bool = false,
+) -> bool {
+	xform := transform_2d(position)
+	x_frame := 0
+	hover_position: Vector2 = {0, 0}
+	color := BUTTON_COLOR
+	if !disabled && aabb_contains(position, size, mouse_world_position) {
+		ui_state.hover_id = id
+		x_frame = 1
+		hover_position += 3
+	}
+	if !disabled && inputs.mouse_down[sapp.Mousebutton.LEFT] && ui_state.hover_id == id {
+		ui_state.down_clicked_id = id
+		x_frame = 2
+	}
+
+
+	if disabled {
+		x_frame = 3
+	}
+
+	pressed := false
+
+	if !disabled &&
+	   ui_state.hover_id == id &&
+	   !ui_state.click_captured &&
+	   inputs.mouse_just_pressed[sapp.Mousebutton.LEFT] &&
+	   ui_state.down_clicked_id == id {
+		pressed = true
+		ui_state.click_captured = true
+	}
+
+
+	uv := get_frame_uvs(.buttons, {x_frame, 0}, {60, 24})
+	shadow_uv := get_frame_uvs(.buttons, {4, 0}, {60, 24})
+	draw_quad_center_xform(xform * transform_2d({-5, -5}), size, .buttons, shadow_uv)
+	draw_quad_center_xform(xform * transform_2d(hover_position), size, .buttons, uv)
+
+
+	draw_text_outlined_center(transform_2d(position - {0, 8} + hover_position), text, font_size)
 
 
 	return pressed

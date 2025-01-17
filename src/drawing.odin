@@ -73,8 +73,6 @@ vbo: sg.Buffer
 ibo: sg.Buffer
 
 
-clear_color: sg.Color = {0.89, 0.7, 0.3, 1.0}
-
 gfx_init :: proc() {
 
 	default_sampler = sg.make_sampler({})
@@ -414,36 +412,37 @@ measure_text :: proc(text: string, font_size: f32 = DEFAULT_FONT_SIZE) -> Vector
 
 
 draw_text_center_center :: proc(
-	center_pos: Vector2,
+	center_xform: Matrix4,
 	text: string,
 	font_size: f32 = DEFAULT_FONT_SIZE,
 	col := COLOR_WHITE,
 ) {
 	text_size := measure_text(text, font_size)
 
-	pos := center_pos - {text_size.x * 0.5, text_size.y * 0.5}
 
-	draw_text(pos, text, font_size, col)
+	draw_text_xform(
+		transform_2d({-text_size.x * 0.5, -text_size.y * 0.5}) * center_xform,
+		text,
+		font_size,
+		col,
+	)
 }
 
 
 draw_text_center :: proc(
-	center_pos: Vector2,
+	center_xform: Matrix4,
 	text: string,
 	font_size: f32 = DEFAULT_FONT_SIZE,
 	col := COLOR_WHITE,
 ) {
 	text_size := measure_text(text, font_size)
 
-	pos := center_pos - {text_size.x * 0.5, 0}
-
-
-	draw_text(pos, text, font_size, col)
+	draw_text_xform(transform_2d({-text_size.x * 0.5, 0.0}) * center_xform, text, font_size, col)
 }
 
 
 draw_text_outlined :: proc(
-	pos: Vector2,
+	xform: Matrix4,
 	text: string,
 	font_size: f32 = DEFAULT_FONT_SIZE,
 	drop_shadow: f32 = 0.0,
@@ -451,31 +450,45 @@ draw_text_outlined :: proc(
 	color := COLOR_WHITE,
 	outline_color := COLOR_BLACK,
 ) {
-	draw_text(pos + {width, width}, text, font_size, outline_color)
-	draw_text(pos + {width, -width}, text, font_size, outline_color)
-	draw_text(pos + {-width, width}, text, font_size, outline_color)
-	draw_text(pos + {-width, -width}, text, font_size, outline_color)
-
+	draw_text_xform(xform * transform_2d({width, width}), text, font_size, outline_color)
+	draw_text_xform(xform * transform_2d({width, -width}), text, font_size, outline_color)
+	draw_text_xform(xform * transform_2d({-width, width}), text, font_size, outline_color)
+	draw_text_xform(xform * transform_2d({-width, -width}), text, font_size, outline_color)
 
 	if width >= 3 {
-		draw_text(pos + {width, 0}, text, font_size, outline_color)
-		draw_text(pos + {0, width}, text, font_size, outline_color)
-		draw_text(pos + {-width, 0}, text, font_size, outline_color)
-		draw_text(pos + {0, -width}, text, font_size, outline_color)
+		draw_text_xform(xform * transform_2d({width, 0}), text, font_size, outline_color)
+		draw_text_xform(xform * transform_2d({0, width}), text, font_size, outline_color)
+		draw_text_xform(xform * transform_2d({-width, 0}), text, font_size, outline_color)
+		draw_text_xform(xform * transform_2d({0, -width}), text, font_size, outline_color)
 	}
-
 
 	if drop_shadow > 0.0 {
-		draw_text(pos + {0, -(drop_shadow + width)}, text, font_size, outline_color)
-		draw_text(pos + {-width, -(drop_shadow + width)}, text, font_size, outline_color)
-		draw_text(pos + {width, -(drop_shadow + width)}, text, font_size, outline_color)
+		draw_text_xform(
+			xform * transform_2d({0, -(drop_shadow + width)}),
+			text,
+			font_size,
+			outline_color,
+		)
+		draw_text_xform(
+			xform * transform_2d({-width, -(drop_shadow + width)}),
+			text,
+			font_size,
+			outline_color,
+		)
+		draw_text_xform(
+			xform * transform_2d({width, -(drop_shadow + width)}),
+			text,
+			font_size,
+			outline_color,
+		)
 	}
 
-	draw_text(pos, text, font_size, color)
+	draw_text_xform(xform, text, font_size, color)
+
 }
 
 draw_text_outlined_center :: proc(
-	pos: Vector2,
+	xform: Matrix4,
 	text: string,
 	font_size: f32 = DEFAULT_FONT_SIZE,
 	drop_shadow: f32 = 0.0,
@@ -483,34 +496,47 @@ draw_text_outlined_center :: proc(
 	color := COLOR_WHITE,
 	outline_color := COLOR_BLACK,
 ) {
-	draw_text_center(pos + {width, width}, text, font_size, outline_color)
-	draw_text_center(pos + {width, -width}, text, font_size, outline_color)
-	draw_text_center(pos + {-width, width}, text, font_size, outline_color)
-	draw_text_center(pos + {-width, -width}, text, font_size, outline_color)
-
+	draw_text_center(xform * transform_2d({width, width}), text, font_size, outline_color)
+	draw_text_center(xform * transform_2d({width, -width}), text, font_size, outline_color)
+	draw_text_center(xform * transform_2d({-width, width}), text, font_size, outline_color)
+	draw_text_center(xform * transform_2d({-width, -width}), text, font_size, outline_color)
 
 	if width >= 3 {
-		draw_text_center(pos + {width, 0}, text, font_size, outline_color)
-		draw_text_center(pos + {0, width}, text, font_size, outline_color)
-		draw_text_center(pos + {-width, 0}, text, font_size, outline_color)
-		draw_text_center(pos + {0, -width}, text, font_size, outline_color)
+		draw_text_center(xform * transform_2d({width, 0}), text, font_size, outline_color)
+		draw_text_center(xform * transform_2d({0, width}), text, font_size, outline_color)
+		draw_text_center(xform * transform_2d({-width, 0}), text, font_size, outline_color)
+		draw_text_center(xform * transform_2d({0, -width}), text, font_size, outline_color)
 	}
-
 
 	if drop_shadow > 0.0 {
-		draw_text_center(pos + {0, -(drop_shadow + width)}, text, font_size, outline_color)
-		draw_text_center(pos + {-width, -(drop_shadow + width)}, text, font_size, outline_color)
-		draw_text_center(pos + {width, -(drop_shadow + width)}, text, font_size, outline_color)
+		draw_text_center(
+			xform * transform_2d({0, -(drop_shadow + width)}),
+			text,
+			font_size,
+			outline_color,
+		)
+		draw_text_center(
+			xform * transform_2d({-width, -(drop_shadow + width)}),
+			text,
+			font_size,
+			outline_color,
+		)
+		draw_text_center(
+			xform * transform_2d({width, -(drop_shadow + width)}),
+			text,
+			font_size,
+			outline_color,
+		)
 	}
-
-	draw_text_center(pos, text, font_size, color)
+	draw_text_center(xform, text, font_size, color)
 }
 
-draw_text :: proc(
-	pos: Vector2,
+
+draw_text_xform :: proc(
+	xform: Matrix4,
 	text: string,
 	font_size: f32 = DEFAULT_FONT_SIZE,
-	col := COLOR_WHITE,
+	color := COLOR_WHITE,
 ) {
 	using stbtt
 
@@ -554,19 +580,19 @@ draw_text :: proc(
 
 		uv := v4{q.s0, q.t1, q.s1, q.t0}
 		xform :=
-			transform_2d(pos, 0, {auto_cast 1.0 * scale, auto_cast 1.0 * scale}) *
+			xform *
+			linalg.matrix4_scale_f32({scale, scale, scale}) *
 			transform_2d(offset_to_render_at)
-		draw_quad_xform(xform, size, .nil, uv, col, 0, 1)
+		draw_quad_xform(xform, size, .nil, uv, color, 0, 1)
 
 		x += advance_x
 		y += -advance_y
 	}
-
 }
 
 
 draw_text_constrainted_center :: proc(
-	center_pos: Vector2,
+	xform: Matrix4,
 	text: string,
 	box_width: f32,
 	font_size: f32 = DEFAULT_FONT_SIZE,
@@ -575,7 +601,7 @@ draw_text_constrainted_center :: proc(
 
 	overall_height: f32 = 0.0
 	current_width: f32 = 0.0
-	new_draw_pos_y := center_pos.y
+	additional_y: f32 = 0
 	spacing_y := font_size * 0.25
 	str_arr := strings.split(text, " ", context.temp_allocator)
 
@@ -585,10 +611,10 @@ draw_text_constrainted_center :: proc(
 		if current_width + width > box_width {
 			assert(len(temp_str_buffer) > 0)
 			str := strings.join(temp_str_buffer[:], " ", context.temp_allocator)
-			draw_text_center({center_pos.x, new_draw_pos_y}, str, font_size, col)
+			draw_text_center(xform * transform_2d({0, additional_y}), str, font_size, col)
 			remove_range(&temp_str_buffer, 0, len(temp_str_buffer))
 			height := measure_text(str, font_size).y
-			new_draw_pos_y -= height + spacing_y
+			additional_y -= height + spacing_y
 			overall_height += height
 			current_width = 0
 		}
@@ -601,7 +627,69 @@ draw_text_constrainted_center :: proc(
 		str := strings.join(temp_str_buffer[:], " ", context.temp_allocator)
 		height := measure_text(str, font_size).y
 		overall_height += height
-		draw_text_center({center_pos.x, new_draw_pos_y}, str, font_size, col)
+		draw_text_center(xform * transform_2d({0, additional_y}), str, font_size, col)
+	}
+
+	return overall_height
+}
+
+
+draw_text_constrainted_center_outlined :: proc(
+	xform: Matrix4,
+	text: string,
+	box_width: f32,
+	font_size: f32 = DEFAULT_FONT_SIZE,
+	drop_shadow: f32 = 0.0,
+	width: f32 = 4.0,
+	color := COLOR_WHITE,
+	outline_color := COLOR_BLACK,
+) -> f32 {
+
+	overall_height: f32 = 0.0
+	current_width: f32 = 0.0
+	additional_y: f32 = 0
+	spacing_y := font_size * 0.25
+	str_arr := strings.split(text, " ", context.temp_allocator)
+
+	temp_str_buffer: [dynamic]string
+	for str in str_arr {
+		text_width := measure_text(str, font_size).x
+		if current_width + text_width > box_width {
+			assert(len(temp_str_buffer) > 0)
+			str := strings.join(temp_str_buffer[:], " ", context.temp_allocator)
+			draw_text_outlined_center(
+				xform * transform_2d({0, additional_y}),
+				str,
+				font_size,
+				drop_shadow,
+				width,
+				color,
+				outline_color,
+			)
+			remove_range(&temp_str_buffer, 0, len(temp_str_buffer))
+			height := measure_text(str, font_size).y
+			additional_y -= height + spacing_y
+			overall_height += height
+			current_width = 0
+		}
+
+		current_width += text_width
+		append(&temp_str_buffer, str)
+	}
+
+	if len(temp_str_buffer) > 0 {
+		str := strings.join(temp_str_buffer[:], " ", context.temp_allocator)
+		height := measure_text(str, font_size).y
+		overall_height += height
+		draw_text_outlined_center(
+			xform * transform_2d({0, additional_y}),
+			str,
+			font_size,
+			drop_shadow,
+			width,
+			color,
+			outline_color,
+		)
 	}
 
 	return overall_height
