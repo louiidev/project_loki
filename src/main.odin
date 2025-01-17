@@ -33,6 +33,8 @@ last_id: u32 = 0
 Entity :: struct {
 	using _:                  BaseEntity,
 	id:                       u32,
+	velocity:                 Vector2,
+	dodge_roll_cooldown:      f32,
 	speed:                    f32,
 	speed_while_shooting:     f32,
 	current_speed:            f32,
@@ -43,7 +45,7 @@ Entity :: struct {
 	knockback_timer:          f32,
 	knockback_direction:      Vector2,
 	knockback_velocity:       Vector2,
-	roll_stamina:             f32,
+	roll_timer:               f32,
 	max_roll_stamina:         f32,
 	attack_timer:             f32,
 	stun_timer:               f32,
@@ -110,7 +112,9 @@ PLAYER_WALK_SHOOTING_SPEED :: 80 * 0.25
 PLAYER_SPEED_REDUCATION_PER_FRAME: f32 : 70.0
 PLAYER_SPEED_ADDITION_PER_FRAME: f32 : 120.0
 PLAYER_ROLL_SPEED :: 100
-PLAYER_ROLLDOWN_COOLDOWN :: 0.1
+PLAYER_ROLLDOWN_COOLDOWN :: 0.8
+PLAYER_DODGE_ROLL_PWR :: 180
+PLAYER_DODGE_ROLL_TIME :: 0.36
 
 PLAYER_GUN_MOVE_DIST: f32 : 8.0
 
@@ -434,6 +438,7 @@ knockback_enemies_in_radius :: proc(player: ^Entity, radius: f32) {
 	for &enemy in game_data.enemies {
 		if circles_overlap(player.position, radius, enemy.position, enemy.collision_radius) {
 			knockback_enemy(&enemy, linalg.normalize(enemy.position - player.position))
+			enemy.stun_timer = game_data.enemy_stun_time
 		}
 	}
 }
@@ -498,6 +503,7 @@ update_entity_timers :: proc(ent: ^Entity, dt: f32) {
 	ent.i_frame_timer = math.max(0.0, ent.i_frame_timer - dt)
 	ent.reload_timer = math.max(0.0, ent.reload_timer - dt)
 	ent.current_animation_timer += dt
+	ent.dodge_roll_cooldown = math.max(0.0, ent.dodge_roll_cooldown - dt)
 }
 
 create_entity :: proc(health: f32, position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
@@ -785,13 +791,14 @@ game_play :: proc() {
 	}
 
 	{
+		update_render_props()
+	}
+
+	{
 		// PERMANENCE
 		render_update_permanence(dt)
 	}
 
-	{
-		update_render_props()
-	}
 
 	if game_data.ui_state == .none {
 		// XP pickups
@@ -887,20 +894,19 @@ game_play :: proc() {
 		speed := player.speed
 
 		if inputs.button_just_pressed[Keycode.SPACE] {
-			if player.roll_stamina > 0 && player.animation_state != .ROLLING {
+			if player.dodge_roll_cooldown <= 0 && player.animation_state != .ROLLING {
+				direction: Vector2 = player_input != V2_ZERO ? player_input : {1, 0}
+				player.velocity = direction * PLAYER_DODGE_ROLL_PWR
 				set_ent_animation_state(&player, .ROLLING)
-			} else {
-				set_ent_animation_state(&player, .WALKING)
+				player.dodge_roll_cooldown = PLAYER_ROLLDOWN_COOLDOWN
+				player.roll_timer = PLAYER_DODGE_ROLL_TIME
 			}
-		}
-
-		if player.animation_state == .WALKING {
 
 		}
 
-		if player.animation_state == .ROLLING {
-			player.roll_stamina -= dt
-			speed = player.roll_speed
+		if player.roll_timer > 0 {
+
+			player.roll_timer -= dt
 
 			x_normalized := math.sign(x)
 			if run_every_seconds(0.075) {
@@ -911,12 +917,10 @@ game_play :: proc() {
 				)
 			}
 
-			if player.roll_stamina <= 0 {
-				player.roll_stamina = 0
+			if player.roll_timer <= 0 {
+				player.roll_timer = 0
 				set_ent_animation_state(&player, .WALKING)
 			}
-		} else {
-			player.roll_stamina = math.min(player.roll_stamina + dt, player.max_roll_stamina)
 		}
 
 
@@ -987,28 +991,41 @@ game_play :: proc() {
 
 		potential_pos := player.position + player_input * dt * player.current_speed
 
+		if player.roll_timer > 0 {
+			potential_pos = player.position + player.velocity * dt
+		}
+
 		// left wall
 		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[0]) {
 			player_input.x = math.max(0, player_input.x)
+			player.velocity = V2_ZERO
 		}
 
 		// bottom wall
 		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[1]) {
 			player_input.y = math.max(0, player_input.y)
+			player.velocity = V2_ZERO
 		}
 
 
 		// right wall
 		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[2]) {
 			player_input.x = math.min(0, player_input.x)
+			player.velocity = V2_ZERO
 		}
 
 		// top wall
 		if check_wall_collision(potential_pos, game_data.player.collision_radius, WALLS[3]) {
 			player_input.y = math.min(0, player_input.y)
+			player.velocity = V2_ZERO
 		}
 
-		player.position = player.position + player_input * dt * player.current_speed
+
+		if player.roll_timer > 0 {
+			player.position = player.position + player.velocity * dt
+		} else {
+			player.position = player.position + player_input * dt * player.current_speed
+		}
 
 
 		frame_x := player.current_animation_frame
@@ -1054,19 +1071,6 @@ game_play :: proc() {
 
 			weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
 			draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
-			draw_status_bar(
-				game_data.player.position + {0.0, -12},
-				{1, 0, 0, 1},
-				auto_cast game_data.player.health,
-				auto_cast game_data.player.max_health,
-			)
-
-			draw_status_bar(
-				game_data.player.position + {0.0, -14},
-				{0, 0, 1, 1},
-				player.roll_stamina,
-				player.max_roll_stamina,
-			)
 
 			if game_data.current_bullets_count == 0 && player.reload_timer > 0 {
 				// line
@@ -1165,7 +1169,8 @@ game_play :: proc() {
 			}
 			if game_data.player.active &&
 			   game_data.timer_to_show_player_death_animation <= 0 &&
-			   enemy.attack_direction == V2_ZERO {
+			   enemy.attack_direction == V2_ZERO &&
+			   linalg.distance(enemy.position, game_data.player.position) > 8 {
 				enemy.flip_x = enemy.position.x < game_data.player.position.x
 			}
 
@@ -1190,7 +1195,7 @@ game_play :: proc() {
 			}
 
 			if enemy.state == .JUMPING {
-				scale.x -= 0.2
+				scale.x -= 0.35
 			}
 
 			if enemy.state == .WALKING {
@@ -1206,7 +1211,12 @@ game_play :: proc() {
 
 			// RENDER ENEMIES
 			xform := transform_2d(position, 0, {scale.x, scale.y})
+
+
 			shadows_xform := transform_2d(enemy.position + {-1, -3})
+			if enemy.state == .JUMPING {
+				shadows_xform = transform_2d({enemy.position.x, enemy.ground_y} + {-1, -3})
+			}
 
 			if enemy.state == .WALKING {
 				xform *= transform_2d({-5, -5}, rotation)
@@ -1226,6 +1236,30 @@ game_play :: proc() {
 			shadow_uvs := get_frame_uvs(.shadows, {0, sprite_y_index}, {18, 18})
 
 			draw_quad_center_xform(shadows_xform, {18, 18}, .shadows, shadow_uvs, COLOR_WHITE)
+
+
+			if enemy.type == .BULL && enemy.state == .PREP_ATTACK {
+				attack_indicator_size := Vector2{150, 28}
+				circle_center: f32 = 16.0
+				attack_indicator_half_width := attack_indicator_size.x * 0.5
+				target_rotation := math.atan2(enemy.attack_direction.y, enemy.attack_direction.x)
+				target_xform := transform_2d(
+					enemy.position + {attack_indicator_half_width, -18 * 0.5} - {circle_center, 0},
+				)
+
+				draw_quad_center_xform(
+					target_xform *
+					transform_2d({-attack_indicator_half_width + circle_center, 0}) *
+					transform_2d({}, target_rotation) *
+					transform_2d({attack_indicator_half_width - circle_center, 0}),
+					attack_indicator_size,
+					.bull_attack_indicator,
+					DEFAULT_UV,
+					COLOR_WHITE,
+				)
+			}
+
+
 			draw_quad_center_xform(xform, {18, 18}, .enemies, uvs, COLOR_WHITE, flash_amount)
 
 

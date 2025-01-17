@@ -36,6 +36,7 @@ Enemy :: struct {
 EnemyState :: enum {
 	IDLE,
 	WALKING,
+	PREP_ATTACK,
 	ATTACKING,
 	JUMPING,
 }
@@ -250,8 +251,8 @@ barrel_crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
 }
 
 
-JUMP_VELOCITY: f32 : 300
-ENT_GRAVITY: f32 : 10
+JUMP_VELOCITY: f32 : 400
+ENT_GRAVITY: f32 : 2000
 jumper_update_logic :: proc(entity: ^Enemy, dt: f32) {
 
 	if entity.attack_timer <= 0 {
@@ -263,7 +264,7 @@ jumper_update_logic :: proc(entity: ^Enemy, dt: f32) {
 
 
 	if entity.state == .JUMPING {
-		entity.jump_velocity -= ENT_GRAVITY
+		entity.jump_velocity -= ENT_GRAVITY * dt
 		entity.position.y += entity.jump_velocity * dt
 		if entity.position.y < entity.ground_y {
 			entity.state = .IDLE
@@ -272,7 +273,8 @@ jumper_update_logic :: proc(entity: ^Enemy, dt: f32) {
 		}
 	} else if entity.state == .WALKING {
 		move_entity_towards_player(entity, dt, entity.speed)
-		if linalg.distance(entity.position, game_data.player.position) <= 15 {
+		if linalg.distance(entity.position, game_data.player.position) <= 15 &&
+		   entity.attack_timer >= JUMPER_ATTACK_TIME * 0.75 {
 			entity.attack_timer -= JUMPER_ATTACK_TIME * 0.5
 		}
 	} else if entity.state == .IDLE {
@@ -369,42 +371,37 @@ gunner_update_logic :: proc(entity: ^Enemy, dt: f32) {
 }
 
 
-BULL_CHARGE_DIST :: 80
-BULL_MAX_CHARGE_DIST: f32 : 130
-BULL_CHARGE_SPEED: f32 : 140
+BULL_CHARGE_DIST :: 120
+BULL_MAX_CHARGE_DIST: f32 : 140
+BULL_CHARGE_SPEED: f32 : 160
+BULL_CHARGE_UP_TIME: f32 : 1.2
 // time to attack
 // charge direction
 
+BULL_ATTACK_COOLDOWN: f32 : 3
 bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	target_position := game_data.player.position
 	distance_from_target := linalg.distance(target_position, entity.position)
 
 
-	// If bull has charged attack already
-	// don't reset attack
-	// if bull isn't close to player
-	// move close to player
-	//
-
-	if distance_from_target > BULL_CHARGE_DIST &&
-	   entity.weapon_cooldown_timer <= 0 &&
-	   entity.attack_direction == V2_ZERO {
+	#partial switch (entity.state) {
+	case .IDLE:
+		entity.state = .WALKING
+		entity.weapon_cooldown_timer = BULL_ATTACK_COOLDOWN
+	case .WALKING:
 		move_entity_towards_player(entity, dt, entity.speed)
 		entity.charge_distance = 0
-	} else if entity.attack_direction == V2_ZERO && entity.charge_distance == 0 {
-		entity.attack_direction = linalg.normalize(target_position - entity.position)
-		entity.weapon_cooldown_timer = 1.5
-	}
-
-	if entity.weapon_cooldown_timer <= 0 &&
-	   entity.charge_distance == 0 &&
-	   entity.attack_direction != V2_ZERO {
-		entity.attack_direction = linalg.normalize(target_position - entity.position)
-	}
-
-	if entity.weapon_cooldown_timer <= 0 &&
-	   entity.attack_direction != V2_ZERO &&
-	   entity.charge_distance < BULL_MAX_CHARGE_DIST {
+		if entity.weapon_cooldown_timer <= 0 && distance_from_target <= BULL_CHARGE_DIST {
+			entity.state = .PREP_ATTACK
+			entity.attack_direction = linalg.normalize(target_position - entity.position)
+			entity.charge_up_time = BULL_CHARGE_UP_TIME
+		}
+	case .PREP_ATTACK:
+		entity.charge_up_time -= dt
+		if entity.charge_up_time <= 0 {
+			entity.state = .ATTACKING
+		}
+	case .ATTACKING:
 		x := entity.attack_direction.x * dt * BULL_CHARGE_SPEED
 		y := entity.attack_direction.y * dt * BULL_CHARGE_SPEED
 		dist_this_frame := linalg.length(Vector2{x, y})
@@ -420,15 +417,23 @@ bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 			)
 		}
 
-	} else if entity.charge_distance >= BULL_MAX_CHARGE_DIST {
-		entity.attack_direction = V2_ZERO
-		entity.weapon_cooldown_timer = 0
-		entity.charge_distance = 0
+		if entity.charge_distance >= BULL_MAX_CHARGE_DIST {
+			entity.attack_direction = V2_ZERO
+			entity.weapon_cooldown_timer = 0
+			entity.charge_distance = 0
+			entity.state = .IDLE
+		}
+
+		if circles_overlap(
+			entity.position,
+			entity.collision_radius,
+			game_data.player.position,
+			4,
+		) {
+			damage_player(1, .physical)
+		}
 	}
 
-	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1, .physical)
-	}
 }
 
 cactus_update_logic :: proc(entity: ^Entity, dt: f32) {
@@ -444,9 +449,9 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .BAT:
 		return 1
 	case .BULL:
-		return 4
-	case .SLUG:
 		return 1
+	case .SLUG:
+		return 2
 	case .BBY_SLUG:
 		return 10000
 	case .BARREL_CRAWLER:
@@ -454,7 +459,7 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .JUMPER:
 		return 1
 	case .GUNNER:
-		return 1
+		return 3
 	}
 
 	return 0
@@ -467,7 +472,7 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	case .BAT:
 		return 0.25
 	case .BULL:
-		return 0.1
+		return 1.0
 	case .SLUG:
 		return 0.1
 	case .BBY_SLUG:
