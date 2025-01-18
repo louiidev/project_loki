@@ -47,9 +47,11 @@ EnemyType :: enum {
 	BULL,
 	SLUG,
 	BBY_SLUG,
-	BARREL_CRAWLER,
+	CHASER,
 	JUMPER,
 	GUNNER,
+	EXPLOSIVE_CHASER,
+	TANK,
 }
 
 create_bat :: proc(position: Vector2) -> Enemy {
@@ -101,10 +103,10 @@ create_bby_slug :: proc(position: Vector2) -> Enemy {
 	return enemy
 }
 
-create_barrel_crawler :: proc(position: Vector2) -> Enemy {
+create_explosive_chaser :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
 	enemy.entity = create_entity(10, position)
-	enemy.type = .BARREL_CRAWLER
+	enemy.type = .EXPLOSIVE_CHASER
 	enemy.speed = 15
 	enemy.id = last_id
 	return enemy
@@ -127,6 +129,28 @@ create_gunner :: proc(position: Vector2) -> Enemy {
 	enemy.entity = create_entity(20, position)
 	enemy.type = .GUNNER
 	enemy.speed = 25
+	enemy.id = last_id
+	enemy.attack_timer = GUNNER_ATTACK_TIME
+	enemy.state = .WALKING
+	return enemy
+}
+
+create_chaser :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity(30, position)
+	enemy.type = .CHASER
+	enemy.speed = 35
+	enemy.id = last_id
+	enemy.attack_timer = GUNNER_ATTACK_TIME
+	enemy.state = .WALKING
+	return enemy
+}
+
+create_tank :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_entity(100, position)
+	enemy.type = .TANK
+	enemy.speed = 10
 	enemy.id = last_id
 	enemy.attack_timer = GUNNER_ATTACK_TIME
 	enemy.state = .WALKING
@@ -454,12 +478,16 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 		return 2
 	case .BBY_SLUG:
 		return 10000
-	case .BARREL_CRAWLER:
+	case .EXPLOSIVE_CHASER:
 		return 1
 	case .JUMPER:
 		return 1
 	case .GUNNER:
 		return 3
+	case .CHASER:
+		return 1
+	case .TANK:
+		return 1
 	}
 
 	return 0
@@ -477,12 +505,16 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 		return 0.1
 	case .BBY_SLUG:
 		return 0
-	case .BARREL_CRAWLER:
+	case .EXPLOSIVE_CHASER:
 		return 0.1
 	case .JUMPER:
 		return 0.1
 	case .GUNNER:
 		return 0.8
+	case .CHASER:
+		return 0.2
+	case .TANK:
+		return 0.1
 	}
 
 	return 0
@@ -554,12 +586,16 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 			append(&game_data.enemies, create_bby_slug(position))
 		case .SLUG:
 			append(&game_data.enemies, create_slug(position))
-		case .BARREL_CRAWLER:
-			append(&game_data.enemies, create_barrel_crawler(position))
+		case .EXPLOSIVE_CHASER:
+			append(&game_data.enemies, create_explosive_chaser(position))
 		case .JUMPER:
 			append(&game_data.enemies, create_jumper(position))
 		case .GUNNER:
 			append(&game_data.enemies, create_gunner(position))
+		case .CHASER:
+			append(&game_data.enemies, create_chaser(position))
+		case .TANK:
+			append(&game_data.enemies, create_tank(position))
 		}
 
 
@@ -573,6 +609,9 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	case .CRAWLER:
 	case .BBY_SLUG:
 	case .SLUG:
+	case .EXPLOSIVE_CHASER:
+	case .CHASER:
+	case .TANK:
 
 	case .GUNNER:
 	case .JUMPER:
@@ -583,10 +622,11 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	case .BULL:
 		enemy.attack_timer = BAT_ATTACK_TIME + ENEMY_KNOCKBACK_TIME
 
-	case .BARREL_CRAWLER:
+
 	}
 
-	if enemy.type == .BARREL_CRAWLER || enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
+	if enemy.type == .EXPLOSIVE_CHASER ||
+	   enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
 		return
 	}
 
@@ -606,6 +646,8 @@ damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
 		color = hex_to_rgb(0xe84444)
 	}
 
+	e.stun_timer = game_data.enemy_stun_time
+
 	e.health -= dmg
 
 	popup_txt: PopupText = DEFAULT_POPUP_TXT
@@ -615,6 +657,7 @@ damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
 	popup_txt.scale = scale
 	popup_txt.position = e.position
 	popup_txt.color = color
+	play_sound("event:/enemy_hit", e.position)
 	append(&game_data.popup_text, popup_txt)
 
 	if e.health <= 0 {
@@ -638,12 +681,16 @@ enemy_update :: proc(enemy: ^Enemy, dt: f32) {
 
 	case .BBY_SLUG:
 		bby_slug_update_logic(enemy, dt)
-	case .BARREL_CRAWLER:
+	case .EXPLOSIVE_CHASER:
 		barrel_crawler_update_logic(enemy, dt)
 	case .JUMPER:
 		jumper_update_logic(enemy, dt)
 	case .GUNNER:
 		gunner_update_logic(enemy, dt)
+	case .CHASER:
+		crawler_update_logic(enemy, dt)
+	case .TANK:
+		crawler_update_logic(enemy, dt)
 	}
 
 }

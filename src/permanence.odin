@@ -186,11 +186,8 @@ render_update_permanence :: proc(dt: f32) {
 				max_alpha,
 				1.0 - permanence.life_time / permanence.max_life_time,
 			)
-			if permanence.enemy_type != .BARREL_CRAWLER {
+			if permanence.enemy_type != .EXPLOSIVE_CHASER {
 
-				// progress := math.min(elapsedTime / duration, 1)
-				// permanence.velocity.x -= ease.elastic_out(dt * 10)
-				// permanence.velocity.y -= ease.elastic_out(dt * 10)
 
 				permanence.velocity =
 					magnitude(permanence.velocity) > 0 ? permanence.velocity - dt * 1000 * linalg.normalize(permanence.velocity) : V2_ZERO

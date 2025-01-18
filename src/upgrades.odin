@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:math"
+import "core:math/rand"
 
 Upgrade :: enum {
 	PIERCING_SHOT,
@@ -19,6 +20,45 @@ Upgrade :: enum {
 	WALKING_SPEED,
 	STUN_TIME,
 	BIGGER_BULLETS,
+	BOMB_DROP_RELOAD,
+	PIERCING_SPIKE_RELOAD,
+	ROTATING_ORB,
+	ORB_DAMAGE_INCREASE,
+	BULLET_DMG,
+}
+
+
+// Returns 0 for probability if they dont have upgrade
+only_if_has_upgrade :: proc(upgrade: Upgrade) -> f32 {
+	return game_data.player_upgrade[upgrade] > 0 ? 1.0 : 0.0
+}
+
+// Returns 0 for probability if they have upgrade
+only_if_dont_have_upgrade :: proc(upgrade: Upgrade) -> f32 {
+	return game_data.player_upgrade[upgrade] > 0 ? 0.0 : 1.0
+}
+
+
+get_base_percentage :: proc(upgrade: Upgrade) -> f32 {
+	#partial switch (upgrade) {
+	case .BOMB_DROP_RELOAD:
+		return 20
+	case .PIERCING_SPIKE_RELOAD:
+		return 100
+	}
+
+
+	return 10
+}
+
+upgrade_percentage_modifier :: proc(upgrade: Upgrade) -> f32 {
+	#partial switch (upgrade) {
+	case .BOMB_DROP_RELOAD:
+		return 1.5
+	}
+
+
+	return 1
 }
 
 
@@ -28,12 +68,12 @@ get_upgrade_percentage :: proc(upgrade: Upgrade) -> f32 {
 
 	switch upgrade_amount {
 	case 0 ..= 1:
-		return 10
+		return get_base_percentage(upgrade)
 	case 2 ..= 4:
-		return 5
+		return 5 * upgrade_percentage_modifier(upgrade)
 	}
 
-	return 2.5
+	return 2.5 * upgrade_percentage_modifier(upgrade)
 }
 
 
@@ -84,7 +124,16 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Increased Stun Time"
 	case .BIGGER_BULLETS:
 		return "Increased Bullet Size"
-
+	case .BOMB_DROP_RELOAD:
+		return "Bombs drop on reload"
+	case .PIERCING_SPIKE_RELOAD:
+		return "Piercing spikes on reload"
+	case .ROTATING_ORB:
+		return "Rotating Orb +1"
+	case .ORB_DAMAGE_INCREASE:
+		return "Increased Orb Damage"
+	case .BULLET_DMG:
+		return "Increases Bullet Damage"
 	}
 
 
@@ -127,6 +176,16 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return fmt.tprintf("Increases Stun time by %.0f%%", percentage)
 	case .BIGGER_BULLETS:
 		return fmt.tprintf("Increases Bullet size by %.0f%%", percentage)
+	case .BOMB_DROP_RELOAD:
+		return fmt.tprintf("%.0f%% chance a bomb drops on reload", percentage)
+	case .PIERCING_SPIKE_RELOAD:
+		return "Fires Piercing spikes on reload"
+	case .ROTATING_ORB:
+		return "Creates an Orb that rotates around the player and deals damage"
+	case .ORB_DAMAGE_INCREASE:
+		return fmt.tprintf("Increases Orb Damage by %.0f%%", percentage)
+	case .BULLET_DMG:
+		return fmt.tprintf("Increases Bullet Damage by %.0f%%", percentage)
 	}
 
 
@@ -179,6 +238,10 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 		increase_upgrade_by_percentage(percentage, &game_data.money_pickup_radius)
 	case .STUN_TIME:
 		increase_upgrade_by_percentage(percentage, &game_data.enemy_stun_time)
+	case .ORB_DAMAGE_INCREASE:
+		increase_upgrade_by_percentage(percentage, &game_data.orb_damage_per_hit)
+	case .BULLET_DMG:
+		increase_upgrade_by_percentage(percentage, &game_data.bullet_dmg)
 	}
 
 
@@ -217,6 +280,16 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 		return 2
 	case .BIGGER_BULLETS:
 		return 3
+	case .BOMB_DROP_RELOAD:
+		return 2
+	case .PIERCING_SPIKE_RELOAD:
+		return 6
+	case .ROTATING_ORB:
+		return 4
+	case .ORB_DAMAGE_INCREASE:
+		return 4
+	case .BULLET_DMG:
+		return 4
 	}
 
 	return 0
@@ -256,6 +329,16 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return 0.25
 	case .BIGGER_BULLETS:
 		return 0.1
+	case .BOMB_DROP_RELOAD:
+		return 0.2
+	case .PIERCING_SPIKE_RELOAD:
+		return only_if_dont_have_upgrade(.PIERCING_SPIKE_RELOAD) * 0.1
+	case .ROTATING_ORB:
+		return 0.1
+	case .ORB_DAMAGE_INCREASE:
+		return only_if_has_upgrade(.ROTATING_ORB) * 0.1
+	case .BULLET_DMG:
+		return 0.1
 	}
 
 	return 0
@@ -272,4 +355,12 @@ get_upgrade_shop_probabilities :: proc() -> [Upgrade]f32 {
 	}
 
 	return probabilities
+}
+
+
+should_spawn_upgrade :: proc(upgrade: Upgrade) -> bool {
+	if game_data.player_upgrade[upgrade] == 0 {
+		return false
+	}
+	return get_upgrade_percentage(upgrade) >= (rand.float32_range(0, 1.0) * 100)
 }

@@ -1,4 +1,5 @@
 package main
+import "core:math"
 import "core:math/linalg"
 
 Projectile :: struct {
@@ -44,7 +45,7 @@ create_player_projectile :: proc(
 	projectile.rotation = rotation
 	projectile.velocity = direction * game_data.bullet_velocity
 	projectile.target = .ENEMY
-	projectile.damage_to_deal = 10
+	projectile.damage_to_deal = game_data.bullet_dmg
 	projectile.last_hit_ent_id = last_hit_id
 	projectile.hits = hits
 	projectile.bounce_count = bounce_count
@@ -66,6 +67,28 @@ create_quintuple_projectiles :: proc(position: Vector2, target: ProjectileTarget
 		projectile.velocity = linalg.normalize(direction) * 30
 		projectile.target = target
 		projectile.damage_to_deal = 10
+		projectile.last_hit_ent_id = 0
+		projectile.hits = 0
+		projectile.bounce_count = 0
+
+		append(&game_data.projectiles, projectile)
+	}
+}
+
+
+create_quintuple_projectiles_spikes :: proc(position: Vector2, target: ProjectileTarget) {
+	for direction in quintuple_directions {
+		projectile: Projectile
+		projectile.animation_count = 1
+		projectile.time_per_frame = 0.05
+		projectile.position = position
+		projectile.active = true
+		projectile.distance_limit = 100
+		projectile.sprite_cell_start = {0, 2}
+		projectile.rotation = math.atan2(direction.y, direction.x)
+		projectile.velocity = linalg.normalize(direction) * 100
+		projectile.target = target
+		projectile.damage_to_deal = target == .ENEMY ? game_data.bullet_dmg : 10
 		projectile.last_hit_ent_id = 0
 		projectile.hits = 0
 		projectile.bounce_count = 0

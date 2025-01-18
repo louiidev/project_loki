@@ -13,6 +13,7 @@ Particle :: struct {
 	size:             f32,
 	color:            Vector4,
 	imageId:          ImageId,
+	uv:               Vector4,
 }
 
 
@@ -68,6 +69,7 @@ spawn_bullet_partciles :: proc(position: Vector2, color: Vector4, direction: Vec
 		particle.lifetime = PARTICLE_LIFETIME * 0.3
 		particle.size = 3.0 + rand.float32_range(0, 1.5)
 		particle.imageId = .circle
+		particle.uv = get_frame_uvs(.circle, {0, 0}, {64, 64})
 
 
 		particle.velocity = {math.cos(direction.x), math.sin(direction.y)} * PARTICLE_VELOCITY
@@ -89,11 +91,28 @@ spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Ve
 		particle.lifetime = PARTICLE_LIFETIME
 		particle.size = 3.0 + rand.float32_range(0, 1.5)
 		particle.imageId = .circle
+		particle.uv = get_frame_uvs(.circle, {0, 0}, {64, 64})
 
 
 		particle.velocity = {math.cos(direction.x), math.sin(direction.y)} * PARTICLE_VELOCITY
 		append(&game_data.particles, particle)
 	}
+}
+
+spawn_orb_particles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
+
+	particle: Particle
+	particle.position = position
+	particle.active = true
+	particle.color = color
+	particle.lifetime = PARTICLE_LIFETIME * 2
+	particle.size = 8.0
+	particle.imageId = .circle
+	particle.uv = get_frame_uvs(.circle, {0, 0}, {64, 64})
+
+
+	particle.velocity = {}
+	append(&game_data.particles, particle)
 }
 
 
@@ -123,7 +142,7 @@ update_render_particles :: proc(dt: f32) {
 			transform_2d(particle.position),
 			{current_size, current_size},
 			particle.imageId,
-			DEFAULT_UV,
+			particle.uv,
 			particle.color,
 		)
 	}

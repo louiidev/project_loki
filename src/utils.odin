@@ -54,3 +54,26 @@ run_every_seconds :: proc(s: f32) -> bool {
 	run := (game_data.ticks % u64(interval)) == 0
 	return run
 }
+
+
+generate_points_rotation_around_circle :: proc(
+	radius: f32,
+	num_points: int,
+	circle_degrees: f32,
+) -> (
+	[]Vector2,
+	[]f32,
+) {
+	points: []Vector2 = make([]Vector2, num_points)
+	rotations: []f32 = make([]f32, num_points)
+
+	angle_step: f32 = circle_degrees / auto_cast num_points
+
+	for i := 0; i < num_points; i += 1 {
+		angle: f32 = math.to_radians(angle_step * auto_cast i)
+		points[i] = Vector2{radius * math.cos(angle), radius * math.sin(angle)}
+		rotations[i] = angle
+	}
+
+	return points, rotations
+}
