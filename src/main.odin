@@ -125,6 +125,9 @@ PLAYER_DODGE_ROLL_PWR :: 180
 PLAYER_DODGE_ROLL_TIME :: 0.36
 PLAYER_DEFAULT_ORB_DMG: f32 : 3
 PLAYER_INITIAL_BULLET_DMG: f32 : 10
+PLAYER_INITIAL_POISION_DMG: f32 : 1.0
+PLAYER_INITIAL_FREEZE_SLOWDOWN: f32 : 0.75
+INITIAL_EXPLOSIVE_DMG: f32 : 15
 
 PLAYER_GUN_MOVE_DIST: f32 : 8.0
 
@@ -133,7 +136,6 @@ SPRITE_PIXEL_SIZE :: 16
 
 PLAYER_KNOCKBACK_VELOCITY :: 120
 
-EXPLOSION_DMG_AMOUNT :: 20
 
 REROLL_COST_MODIFIER :: 2
 
@@ -238,6 +240,15 @@ GameRunState :: struct {
 	crit_chance:                          f32,
 	orb_damage_per_hit:                   f32,
 	bullet_dmg:                           f32,
+	poison_dmg:                           f32,
+	freeze_slowdown:                      f32,
+	poison_slowdown:                      f32,
+	bullet_freeze_chance:                 f32,
+	bullet_poision_chance:                f32,
+	chance_enemy_explodes:                f32,
+	chance_bomb_drop_reload:              f32,
+	chance_for_piercing_shot:             f32,
+	explosive_dmg:                        f32,
 
 
 	// camera shake
@@ -287,6 +298,8 @@ setup_run :: proc() {
 	game_data.bullet_dmg = PLAYER_INITIAL_BULLET_DMG
 	game_data.camera_zoom = 1.0
 	game_data.enemy_stun_time = INITIAL_STUN_TIME
+	game_data.poison_dmg = PLAYER_INITIAL_POISION_DMG
+	game_data.explosive_dmg = INITIAL_EXPLOSIVE_DMG
 	setup_scene_props()
 }
 
@@ -405,7 +418,7 @@ create_explosion :: proc(position: Vector2) {
 		) {
 			damage_enemy(
 				&enemy,
-				EXPLOSION_DMG_AMOUNT,
+				game_data.explosive_dmg,
 				linalg.normalize(enemy.position - explosion.position) * 40,
 			)
 		}
@@ -417,7 +430,7 @@ create_explosion :: proc(position: Vector2) {
 		explosion.position,
 		explosion.size * 0.5,
 	) {
-		damage_player(EXPLOSION_DMG_AMOUNT, .projectile)
+		damage_player(game_data.explosive_dmg, .projectile)
 	}
 
 	create_explosion_permanence(&explosion)
@@ -962,17 +975,25 @@ game_play :: proc() {
 			}
 		}
 
-
 		if inputs.mouse_down[Mousebutton.LEFT] &&
 		   player.weapon_cooldown_timer <= 0 &&
 		   game_data.current_bullets_count > 0 &&
 		   player.reload_timer <= 0 {
 
+			if game_data.player_upgrade[.BULLETS] == 0 {
+				game_data.player_upgrade[.BULLETS] = 1
+			}
+
+			points, angles := generate_points_rotation_around_circle(
+				3,
+				game_data.player_upgrade[.BULLETS],
+				game_data.bullet_spread * auto_cast game_data.player_upgrade[.BULLETS],
+			)
+
 			spread := game_data.bullet_spread + auto_cast game_data.player_upgrade[.BULLETS]
 			camera_shake(0.45)
 			play_sound("event:/gunshot")
-
-			for i := 0; i <= game_data.player_upgrade[.BULLETS]; i += 1 {
+			for i := 0; i < game_data.player_upgrade[.BULLETS]; i += 1 {
 				if game_data.current_bullets_count > 0 {
 					game_data.current_bullets_count -= 1
 					rotation_with_randomness :=
@@ -982,7 +1003,7 @@ game_play :: proc() {
 						math.sin(rotation_with_randomness),
 					}
 					create_player_projectile(
-						attack_position,
+						points[i] + attack_position,
 						attack_direction,
 						rotation_with_randomness,
 					)
@@ -1012,6 +1033,8 @@ game_play :: proc() {
 			}
 
 			player.weapon_cooldown_timer = player.max_weapon_cooldown_time
+			delete(points)
+			delete(angles)
 		}
 
 
@@ -1261,12 +1284,8 @@ game_play :: proc() {
 				game_data.enemies_killed += 1
 				if enemy.type == .EXPLOSIVE_CHASER {
 					create_explosion(enemy.position)
-				} else if game_data.player_upgrade[.EXPLODING_ENEMIES] > 0 {
-					percentage: f32 = auto_cast (game_data.player_upgrade[.EXPLODING_ENEMIES] * 5)
-					if percentage >= rand.float32_range(0, 100) {
-						create_explosion(enemy.position)
-					}
-
+				} else if should_spawn_upgrade(.EXPLODING_ENEMIES) {
+					create_explosion(enemy.position)
 				}
 
 
@@ -1391,7 +1410,15 @@ game_play :: proc() {
 			}
 
 
-			draw_quad_center_xform(xform, {18, 18}, .enemies, uvs, COLOR_WHITE, flash_amount)
+			color := COLOR_WHITE
+
+			if enemy.statuses[.Poison] {
+				color = hex_to_rgb(0xccf61f)
+			} else if enemy.statuses[.Frozen] {
+				color = hex_to_rgb(0x9bf0fd)
+			}
+
+			draw_quad_center_xform(xform, {18, 18}, .enemies, uvs, color, flash_amount)
 
 
 			if enemy.type == .GUNNER {
@@ -1508,6 +1535,14 @@ game_play :: proc() {
 
 
 						damage_enemy(&e, p.damage_to_deal, p.velocity)
+
+						if should_spawn_upgrade(.BULLETS_CAUSE_FREEZE) {
+							e.statuses[.Frozen] = true
+						}
+
+						if should_spawn_upgrade(.BULLETS_CAUSE_POISION) {
+							e.statuses[.Poison] = true
+						}
 
 
 						spawn_particles(

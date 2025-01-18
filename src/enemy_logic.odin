@@ -12,13 +12,21 @@ BAT_ATTACK_TIME: f32 : 5
 JUMPER_ATTACK_TIME: f32 : 5
 GUNNER_ATTACK_TIME: f32 : 5
 
+ENEMY_FREEZE_TIME: f32 : 3.0
+
+
+Status :: enum {
+	Frozen,
+	Poison,
+}
+
 
 Enemy :: struct {
 	using entity:          Entity,
 	type:                  EnemyType,
 	spawn_indicator_timer: f32,
 	flip_x:                bool,
-
+	freeze_timer:          f32,
 
 	// bull_attack_data
 	attack_direction:      Vector2,
@@ -31,6 +39,7 @@ Enemy :: struct {
 	scale:                 Vector2,
 	// gunner enemy
 	bullets_fired:         int,
+	statuses:              [Status]bool,
 }
 
 EnemyState :: enum {
@@ -168,7 +177,7 @@ create_bby_slugs :: proc(position: Vector2) {
 	}
 }
 
-move_entity_towards_player :: proc(entity: ^Entity, dt: f32, speed: f32) {
+move_entity_towards_player :: proc(entity: ^Enemy, dt: f32, speed: f32) {
 	if (entity.stun_timer > 0) {
 		return
 	}
@@ -186,6 +195,16 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32, speed: f32) {
 
 	can_move_x := true
 	can_move_y := true
+
+
+	speed := speed
+	if entity.statuses[.Frozen] {
+		speed *= game_data.freeze_slowdown
+	}
+
+	if entity.statuses[.Poison] && game_data.player_upgrade[.POISON_CAUSES_SLOWDOWN] > 0 {
+		speed *= game_data.poison_slowdown
+	}
 
 
 	for &enemy in game_data.enemies {
@@ -231,34 +250,6 @@ move_entity_towards_player :: proc(entity: ^Entity, dt: f32, speed: f32) {
 	}
 }
 
-crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
-	move_entity_towards_player(entity, dt, entity.speed)
-	entity.state = .WALKING
-
-	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1, .physical)
-	}
-}
-
-
-slug_update_logic :: proc(entity: ^Enemy, dt: f32) {
-	move_entity_towards_player(entity, dt, entity.speed)
-	entity.state = .WALKING
-
-	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1, .physical)
-	}
-}
-
-
-bby_slug_update_logic :: proc(entity: ^Enemy, dt: f32) {
-	move_entity_towards_player(entity, dt, entity.speed)
-	entity.state = .WALKING
-
-	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1, .physical)
-	}
-}
 
 barrel_crawler_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	move_entity_towards_player(entity, dt, entity.speed)
@@ -634,6 +625,24 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 }
 
 
+poison_dmg_enemy :: proc(e: ^Enemy, damage_to_deal: f32) {
+	e.health -= game_data.poison_dmg
+
+	popup_txt: PopupText = DEFAULT_POPUP_TXT
+	popup_txt.active = true
+	popup_txt.text = fmt.tprintf("%.0f", game_data.poison_dmg)
+	popup_txt.alpha = 1.0
+	popup_txt.scale = 1.0
+	popup_txt.position = e.position
+	popup_txt.color = hex_to_rgb(0xccf61f)
+	play_sound("event:/enemy_hit", e.position)
+	append(&game_data.popup_text, popup_txt)
+
+	if e.health <= 0 {
+		create_enemybody_permanence(e, {})
+	}
+}
+
 damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
 
 	dmg := damage_to_deal
@@ -669,28 +678,39 @@ damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
 
 
 enemy_update :: proc(enemy: ^Enemy, dt: f32) {
+
+	if enemy.statuses[.Poison] {
+		if run_every_seconds(1.0) {
+			damage_enemy(enemy, 1.0, {})
+		}
+	}
+
+	if enemy.statuses[.Frozen] {
+		enemy.freeze_timer += dt
+		if enemy.freeze_timer >= ENEMY_FREEZE_TIME {
+			enemy.statuses[.Frozen] = false
+			enemy.freeze_timer = 0
+		}
+	}
+
 	switch (enemy.type) {
-	case .CRAWLER:
-		crawler_update_logic(enemy, dt)
+	case .CRAWLER, .SLUG, .BBY_SLUG, .CHASER, .TANK:
+		move_entity_towards_player(enemy, dt, enemy.speed)
+		enemy.state = .WALKING
+
+		if circles_overlap(enemy.position, enemy.collision_radius, game_data.player.position, 4) {
+			damage_player(1, .physical)
+		}
 	case .BAT:
 		bat_update_logic(enemy, dt)
 	case .BULL:
 		bull_update_logic(enemy, dt)
-	case .SLUG:
-		slug_update_logic(enemy, dt)
-
-	case .BBY_SLUG:
-		bby_slug_update_logic(enemy, dt)
 	case .EXPLOSIVE_CHASER:
 		barrel_crawler_update_logic(enemy, dt)
 	case .JUMPER:
 		jumper_update_logic(enemy, dt)
 	case .GUNNER:
 		gunner_update_logic(enemy, dt)
-	case .CHASER:
-		crawler_update_logic(enemy, dt)
-	case .TANK:
-		crawler_update_logic(enemy, dt)
 	}
 
 }

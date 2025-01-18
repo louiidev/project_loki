@@ -8,8 +8,6 @@ Upgrade :: enum {
 	PIERCING_SHOT,
 	BOUNCE_SHOT,
 	RELOAD_SPEED,
-	ROLL_SPEED,
-	ROLL_STAMINIA,
 	HEALTH,
 	HEALTH_2,
 	MAX_HEALTH,
@@ -25,6 +23,13 @@ Upgrade :: enum {
 	ROTATING_ORB,
 	ORB_DAMAGE_INCREASE,
 	BULLET_DMG,
+	BULLETS_CAUSE_POISION,
+	BULLETS_CAUSE_FREEZE,
+	INCREASE_POISION_DMG,
+	INCREASE_FREEZE_SLOWDOWN,
+	INCREASE_EXPLOSIVE_DMG,
+	POISON_CAUSES_SLOWDOWN,
+	INCREASE_POISON_SLOWDOWN,
 }
 
 
@@ -106,10 +111,6 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Piecing Shot"
 	case .RELOAD_SPEED:
 		return "Reload Speed"
-	case .ROLL_SPEED:
-		return "Roll Speed"
-	case .ROLL_STAMINIA:
-		return "Roll staminia"
 	case .AMMO_UPGRADE:
 		return "Ammo Upgrade"
 	case .BULLETS:
@@ -134,6 +135,20 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Increased Orb Damage"
 	case .BULLET_DMG:
 		return "Increases Bullet Damage"
+	case .BULLETS_CAUSE_FREEZE:
+		return "Bullets Freeze"
+	case .BULLETS_CAUSE_POISION:
+		return "Poision Bullets"
+	case .INCREASE_FREEZE_SLOWDOWN:
+		return "Freeze Slowdown"
+	case .INCREASE_POISION_DMG:
+		return "Poision DMG"
+	case .INCREASE_EXPLOSIVE_DMG:
+		return "Explosive DMG Up"
+	case .POISON_CAUSES_SLOWDOWN:
+		return "Poision Slowdown"
+	case .INCREASE_POISON_SLOWDOWN:
+		return "Increase Poison Slowdown"
 	}
 
 
@@ -158,10 +173,6 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return "Pierces through enemies"
 	case .RELOAD_SPEED:
 		return fmt.tprintf("Upgrades by reload speed by %.0f%%", percentage)
-	case .ROLL_SPEED:
-		return fmt.tprintf("Upgrades by roll speed by %.0f%%", percentage)
-	case .ROLL_STAMINIA:
-		return fmt.tprintf("Upgrades the roll staminia by %.0f%%", percentage)
 	case .AMMO_UPGRADE:
 		return "Upgrades the ammo by 2+"
 	case .BULLETS:
@@ -186,6 +197,20 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return fmt.tprintf("Increases Orb Damage by %.0f%%", percentage)
 	case .BULLET_DMG:
 		return fmt.tprintf("Increases Bullet Damage by %.0f%%", percentage)
+	case .BULLETS_CAUSE_FREEZE:
+		return fmt.tprintf("Increases Change of enemy freeze on hit by %.0f%%", percentage)
+	case .BULLETS_CAUSE_POISION:
+		return fmt.tprintf("Increases Change of enemy poision on hit by %.0f%%", percentage)
+	case .INCREASE_POISION_DMG:
+		return fmt.tprintf("Increases Poision Damage by %.0f%%", percentage)
+	case .INCREASE_FREEZE_SLOWDOWN:
+		return fmt.tprintf("Increases Freeze Slowdown by %.0f%%", percentage)
+	case .INCREASE_EXPLOSIVE_DMG:
+		return fmt.tprintf("Increases Explosive DMG by %.0f%%", percentage)
+	case .INCREASE_POISON_SLOWDOWN:
+			return fmt.tprintf("Increases Poison Slowdown by %.0f%%", percentage)
+	case .POISON_CAUSES_SLOWDOWN:
+			return fmt.tprintf("Poision enemies are slower", percentage)
 	}
 
 
@@ -197,6 +222,10 @@ increase_upgrade_by_percentage :: proc(percentage: f32, upgrade: ^f32) {
 	upgrade^ += upgrade^ * (percentage / 100)
 }
 
+decrease_upgrade_by_percentage :: proc(percentage: f32, upgrade: ^f32) {
+	upgrade^ -= upgrade^ * (percentage / 100)
+}
+
 
 purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 	shop_upgrade.purchased = true
@@ -205,7 +234,16 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 	percentage := get_upgrade_percentage(shop_upgrade.upgrade)
 	game_data.player_upgrade[shop_upgrade.upgrade] += 1
 
-	#partial switch (shop_upgrade.upgrade) {
+	switch (shop_upgrade.upgrade) {
+
+	case .BIGGER_BULLETS:
+	case .BOUNCE_SHOT:
+	case .BULLETS:
+	case .ROTATING_ORB:
+	case .PIERCING_SPIKE_RELOAD:
+	case .POISON_CAUSES_SLOWDOWN:
+
+
 	case .AMMO_UPGRADE:
 		game_data.max_bullets += 2
 	case .HEALTH:
@@ -227,10 +265,6 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 			PLAYER_MIN_POSSIBLE_RELOAD_TIME,
 			game_data.time_to_reload - (game_data.time_to_reload * 0.05),
 		)
-	case .ROLL_STAMINIA:
-		increase_upgrade_by_percentage(percentage, &game_data.player.max_roll_stamina)
-	case .ROLL_SPEED:
-		increase_upgrade_by_percentage(percentage, &game_data.player.roll_speed)
 	case .WALKING_SPEED:
 		increase_upgrade_by_percentage(percentage, &game_data.player.speed)
 		increase_upgrade_by_percentage(percentage, &game_data.player.speed_while_shooting)
@@ -242,6 +276,28 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 		increase_upgrade_by_percentage(percentage, &game_data.orb_damage_per_hit)
 	case .BULLET_DMG:
 		increase_upgrade_by_percentage(percentage, &game_data.bullet_dmg)
+	case .BULLETS_CAUSE_FREEZE:
+		increase_upgrade_by_percentage(percentage, &game_data.bullet_freeze_chance)
+	case .BULLETS_CAUSE_POISION:
+		increase_upgrade_by_percentage(percentage, &game_data.bullet_poision_chance)
+	case .INCREASE_POISION_DMG:
+		increase_upgrade_by_percentage(percentage, &game_data.poison_dmg)
+	case .INCREASE_FREEZE_SLOWDOWN:
+		decrease_upgrade_by_percentage(percentage, &game_data.freeze_slowdown)
+	case .INCREASE_POISON_SLOWDOWN:
+		decrease_upgrade_by_percentage(percentage, &game_data.poison_slowdown)
+	case .EXPLODING_ENEMIES:
+		increase_upgrade_by_percentage(percentage, &game_data.chance_enemy_explodes)
+	case .INCREASE_EXPLOSIVE_DMG:
+		increase_upgrade_by_percentage(percentage, &game_data.explosive_dmg)
+
+	case .BOMB_DROP_RELOAD:
+		increase_upgrade_by_percentage(percentage, &game_data.chance_bomb_drop_reload)
+
+	case .PIERCING_SHOT:
+		increase_upgrade_by_percentage(percentage, &game_data.chance_for_piercing_shot)
+
+
 	}
 
 
@@ -261,10 +317,6 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 	case .PIERCING_SHOT:
 		return 2
 	case .RELOAD_SPEED:
-		return 1
-	case .ROLL_SPEED:
-		return 1
-	case .ROLL_STAMINIA:
 		return 1
 	case .AMMO_UPGRADE:
 		return 2
@@ -290,6 +342,20 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 		return 4
 	case .BULLET_DMG:
 		return 4
+	case .BULLETS_CAUSE_FREEZE:
+		return 4
+	case .BULLETS_CAUSE_POISION:
+		return 4
+	case .INCREASE_POISION_DMG:
+		return 4
+	case .INCREASE_FREEZE_SLOWDOWN:
+		return 4
+	case .INCREASE_EXPLOSIVE_DMG:
+		return 2
+	case .INCREASE_POISON_SLOWDOWN:
+		return 1
+	case .POISON_CAUSES_SLOWDOWN:
+		return 2
 	}
 
 	return 0
@@ -311,10 +377,6 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return 0.15
 	case .RELOAD_SPEED:
 		return 0.24
-	case .ROLL_SPEED:
-		return 0.25
-	case .ROLL_STAMINIA:
-		return 0.25
 	case .AMMO_UPGRADE:
 		return 0.25
 	case .BULLETS:
@@ -339,6 +401,24 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return only_if_has_upgrade(.ROTATING_ORB) * 0.1
 	case .BULLET_DMG:
 		return 0.1
+	case .BULLETS_CAUSE_FREEZE:
+		return 0.1
+	case .BULLETS_CAUSE_POISION:
+		return 0.1
+	case .INCREASE_POISION_DMG:
+		return only_if_has_upgrade(.BULLETS_CAUSE_POISION) * 0.1
+	case .INCREASE_FREEZE_SLOWDOWN:
+		return only_if_has_upgrade(.BULLETS_CAUSE_FREEZE) * 0.1
+	case .INCREASE_EXPLOSIVE_DMG:
+		return 0.1
+	case .POISON_CAUSES_SLOWDOWN:
+		return(
+			only_if_has_upgrade(.BULLETS_CAUSE_POISION) *
+			0.1 *
+			only_if_dont_have_upgrade(.POISON_CAUSES_SLOWDOWN)
+		)
+	case .INCREASE_POISON_SLOWDOWN:
+		return only_if_has_upgrade(.POISON_CAUSES_SLOWDOWN) * 0.1
 	}
 
 	return 0
@@ -362,5 +442,48 @@ should_spawn_upgrade :: proc(upgrade: Upgrade) -> bool {
 	if game_data.player_upgrade[upgrade] == 0 {
 		return false
 	}
-	return get_upgrade_percentage(upgrade) >= (rand.float32_range(0, 1.0) * 100)
+	return (get_chance_percentage(upgrade) * 100) >= (rand.float32_range(0.01, 1.0) * 100)
+
+
+}
+
+
+get_chance_percentage :: proc(upgrade: Upgrade) -> f32 {
+	switch (upgrade) {
+	case .WALKING_SPEED:
+	case .PICKUP_RADIUS:
+	case .STUN_TIME:
+	case .ORB_DAMAGE_INCREASE:
+	case .BULLET_DMG:
+	case .INCREASE_POISION_DMG:
+	case .AMMO_UPGRADE:
+	case .BIGGER_BULLETS:
+	case .BOUNCE_SHOT:
+	case .HEALTH:
+	case .HEALTH_2:
+	case .ROTATING_ORB:
+	case .RELOAD_SPEED:
+	case .MAX_HEALTH:
+	case .PIERCING_SPIKE_RELOAD:
+	case .BULLETS:
+	case .INCREASE_FREEZE_SLOWDOWN:
+	case .INCREASE_EXPLOSIVE_DMG:
+	case .INCREASE_POISON_SLOWDOWN:
+	case .POISON_CAUSES_SLOWDOWN:
+
+	case .PIERCING_SHOT:
+		return game_data.chance_for_piercing_shot
+	case .BOMB_DROP_RELOAD:
+		return game_data.chance_bomb_drop_reload
+	case .BULLETS_CAUSE_FREEZE:
+		return game_data.bullet_freeze_chance
+	case .BULLETS_CAUSE_POISION:
+		return game_data.bullet_poision_chance
+	case .EXPLODING_ENEMIES:
+		return game_data.chance_enemy_explodes
+	
+
+	}
+
+	return 0
 }
