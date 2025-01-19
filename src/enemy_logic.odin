@@ -340,7 +340,7 @@ gunner_update_logic :: proc(entity: ^Enemy, dt: f32) {
 			entity.state = .ATTACKING
 			if entity.bullets_fired <= GUNNER_BULLETS_PER_ATTACK {
 
-				if run_every_seconds(0.2) {
+				if run_every_seconds(0.3) {
 					play_sound("event:/enemy_gunshot", entity.position)
 					rotation_z := calc_rotation_to_target(target_position, entity.position)
 					rotation_with_randomness :=

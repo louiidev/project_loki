@@ -40,6 +40,7 @@ create_enemy_projectile :: proc(position: Vector2, rotation: f32, velocity: Vect
 	projectile.velocity = velocity
 	projectile.target = .PLAYER
 	projectile.damage_to_deal = 1
+	projectile.scale = 1
 	append(&game_data.projectiles, projectile)
 }
 

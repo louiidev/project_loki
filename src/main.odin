@@ -1169,8 +1169,7 @@ game_play :: proc() {
 
 	{
 		// ORBS
-		game_data.player_upgrade[.ROTATING_ORB] = 1
-		if game_data.player_upgrade[.ROTATING_ORB] > 0 {
+		if game_data.player_upgrade[.ROTATING_ORB] > 0 && game_data.player.active {
 			radius: f32 = 20
 			speed: f32 = 0.25
 			points, angles := generate_points_rotation_around_circle(
@@ -2030,16 +2029,16 @@ game_play :: proc() {
 				{auto_cast sapp.width(), auto_cast sapp.height()},
 				COLOR_BLACK - {0, 0, 0, 0.65},
 			)
-			button_pos_y: f32 = -30
+			button_pos_y: f32 = 0
 			button_font_size: f32 : 30
 			button_margin: f32 : 15
 			button_size := Vector2{60, 24} * 4
 
-			draw_text_outlined_center(transform_2d({0, 100}), "PLAYER DEAD", 48)
-			draw_text_outlined_center(transform_2d({0, 50}), "GAME OVER", 48)
+			draw_text_outlined_center(transform_2d({0, 120}), "PLAYER DEAD", 48)
+			draw_text_outlined_center(transform_2d({0, 70}), "GAME OVER", 48)
 
 			stat_img_x: f32 = 60
-			stat_img_y: f32 = -175
+			stat_img_y: f32 = -200
 			draw_quad_center_xform(transform_2d({-stat_img_x, stat_img_y}), {80, 80}, .skull)
 			draw_quad_center_xform(
 				transform_2d({stat_img_x, stat_img_y}),
