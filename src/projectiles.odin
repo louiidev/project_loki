@@ -27,6 +27,22 @@ ProjectileTarget :: enum {
 	ALL,
 }
 
+
+create_enemy_projectile :: proc(position: Vector2, rotation: f32, velocity: Vector2) {
+	projectile: Projectile
+	projectile.sprite_cell_start = {0, 0}
+	projectile.animation_count = 1
+	projectile.time_per_frame = 0.02
+	projectile.position = position
+	projectile.active = true
+	projectile.distance_limit = 250
+	projectile.rotation = rotation
+	projectile.velocity = velocity
+	projectile.target = .PLAYER
+	projectile.damage_to_deal = 1
+	append(&game_data.projectiles, projectile)
+}
+
 create_player_projectile :: proc(
 	position: Vector2,
 	direction: Vector2,
@@ -49,6 +65,7 @@ create_player_projectile :: proc(
 	projectile.last_hit_ent_id = last_hit_id
 	projectile.hits = hits
 	projectile.bounce_count = bounce_count
+	projectile.scale = game_data.bullet_scale + 1.0
 	append(&game_data.projectiles, projectile)
 }
 
@@ -70,7 +87,7 @@ create_quintuple_projectiles :: proc(position: Vector2, target: ProjectileTarget
 		projectile.last_hit_ent_id = 0
 		projectile.hits = 0
 		projectile.bounce_count = 0
-
+		projectile.scale = 1.0
 		append(&game_data.projectiles, projectile)
 	}
 }
@@ -92,6 +109,7 @@ create_quintuple_projectiles_spikes :: proc(position: Vector2, target: Projectil
 		projectile.last_hit_ent_id = 0
 		projectile.hits = 0
 		projectile.bounce_count = 0
+		projectile.scale = 1.0
 
 		append(&game_data.projectiles, projectile)
 	}

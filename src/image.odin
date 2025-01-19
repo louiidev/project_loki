@@ -35,6 +35,7 @@ ImageId :: enum {
 	shadows,
 	bull_attack_indicator,
 	bomb,
+	statues,
 }
 
 
@@ -63,6 +64,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.shadows               = {1, len(EnemyType)},
 	.bull_attack_indicator = {1, 1},
 	.bomb                  = {4, 1},
+	.statues               = {1, 2},
 }
 
 

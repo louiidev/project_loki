@@ -12,7 +12,7 @@ BAT_ATTACK_TIME: f32 : 5
 JUMPER_ATTACK_TIME: f32 : 5
 GUNNER_ATTACK_TIME: f32 : 5
 
-ENEMY_FREEZE_TIME: f32 : 3.0
+ENEMY_FREEZE_TIME: f32 : 8.0
 
 
 Status :: enum {
@@ -26,7 +26,6 @@ Enemy :: struct {
 	type:                  EnemyType,
 	spawn_indicator_timer: f32,
 	flip_x:                bool,
-	freeze_timer:          f32,
 
 	// bull_attack_data
 	attack_direction:      Vector2,
@@ -40,6 +39,7 @@ Enemy :: struct {
 	// gunner enemy
 	bullets_fired:         int,
 	statuses:              [Status]bool,
+	statuses_timers:       [Status]f32,
 }
 
 EnemyState :: enum {
@@ -71,6 +71,7 @@ create_bat :: proc(position: Vector2) -> Enemy {
 	enemy.weapon_cooldown_timer = 10
 	enemy.id = last_id
 	enemy.attack_timer = BAT_ATTACK_TIME
+	enemy.statuses[.Frozen] = true
 	return enemy
 }
 
@@ -80,6 +81,7 @@ create_crawler :: proc(position: Vector2) -> Enemy {
 	enemy.type = .CRAWLER
 	enemy.speed = 20
 	enemy.id = last_id
+	enemy.statuses[.Poison] = true
 	return enemy
 }
 
@@ -100,6 +102,8 @@ create_slug :: proc(position: Vector2) -> Enemy {
 	enemy.type = .SLUG
 	enemy.speed = 15
 	enemy.id = last_id
+	enemy.statuses[.Frozen] = true
+
 	return enemy
 }
 
@@ -313,18 +317,7 @@ bat_update_logic :: proc(entity: ^Enemy, dt: f32) {
 			entity.attack_timer = BAT_ATTACK_TIME
 			rotation_z := calc_rotation_to_target(target_position, entity.position)
 			attack_direction: Vector2 = {math.cos(rotation_z), math.sin(rotation_z)}
-			projectile: Projectile
-			projectile.sprite_cell_start = {0, 0}
-			projectile.animation_count = 1
-			projectile.time_per_frame = 0.02
-			projectile.position = entity.position
-			projectile.active = true
-			projectile.distance_limit = 250
-			projectile.rotation = rotation_z
-			projectile.velocity = attack_direction * 50
-			projectile.target = .PLAYER
-			projectile.damage_to_deal = 1
-			append(&game_data.projectiles, projectile)
+			create_enemy_projectile(entity.position, rotation_z, attack_direction * 50)
 			entity.state = .ATTACKING
 		} else {
 			entity.state = .WALKING
@@ -360,19 +353,7 @@ gunner_update_logic :: proc(entity: ^Enemy, dt: f32) {
 					delta_x := PLAYER_GUN_MOVE_DIST * math.cos(-rotation_z)
 					delta_y := PLAYER_GUN_MOVE_DIST * math.sin(-rotation_z)
 					attack_position: Vector2 = entity.position + {delta_x, -delta_y}
-
-					projectile: Projectile
-					projectile.sprite_cell_start = {0, 0}
-					projectile.animation_count = 1
-					projectile.time_per_frame = 0.02
-					projectile.position = attack_position
-					projectile.active = true
-					projectile.distance_limit = 250
-					projectile.rotation = rotation_z
-					projectile.velocity = attack_direction * 80
-					projectile.target = .PLAYER
-					projectile.damage_to_deal = 1
-					append(&game_data.projectiles, projectile)
+					create_enemy_projectile(attack_position, rotation_z, attack_direction * 80)
 				}
 			} else {
 				entity.attack_timer = GUNNER_ATTACK_TIME
@@ -464,7 +445,7 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .BAT:
 		return 1
 	case .BULL:
-		return 1
+		return 3
 	case .SLUG:
 		return 2
 	case .BBY_SLUG:
@@ -491,7 +472,7 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	case .BAT:
 		return 0.25
 	case .BULL:
-		return 1.0
+		return 0.1
 	case .SLUG:
 		return 0.1
 	case .BBY_SLUG:
@@ -627,7 +608,6 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 
 poison_dmg_enemy :: proc(e: ^Enemy, damage_to_deal: f32) {
 	e.health -= game_data.poison_dmg
-
 	popup_txt: PopupText = DEFAULT_POPUP_TXT
 	popup_txt.active = true
 	popup_txt.text = fmt.tprintf("%.0f", game_data.poison_dmg)
@@ -635,7 +615,7 @@ poison_dmg_enemy :: proc(e: ^Enemy, damage_to_deal: f32) {
 	popup_txt.scale = 1.0
 	popup_txt.position = e.position
 	popup_txt.color = hex_to_rgb(0xccf61f)
-	play_sound("event:/enemy_hit", e.position)
+	// play_sound("event:/enemy_hit", e.position)
 	append(&game_data.popup_text, popup_txt)
 
 	if e.health <= 0 {
@@ -644,7 +624,9 @@ poison_dmg_enemy :: proc(e: ^Enemy, damage_to_deal: f32) {
 }
 
 damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
-
+	if e.spawn_indicator_timer > 0 || !e.active || e.health <= 0 {
+		return
+	}
 	dmg := damage_to_deal
 	scale: f32 = 1.0
 	color := COLOR_WHITE
@@ -671,26 +653,33 @@ damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
 
 	if e.health <= 0 {
 		create_enemybody_permanence(e, bullet_velocity * 0.5)
+		if dmg > damage_to_deal && game_data.player_upgrade[.CRITS_CAUSE_EXPLOSIONS] > 0 {
+			create_explosion(e.position)
+		}
 	} else {
 		knockback_enemy(e, linalg.normalize(bullet_velocity))
 	}
 }
 
-
+ENEMY_POISON_DMG_TIME: f32 : 3.0
 enemy_update :: proc(enemy: ^Enemy, dt: f32) {
 
 	if enemy.statuses[.Poison] {
-		if run_every_seconds(1.0) {
-			damage_enemy(enemy, 1.0, {})
+		enemy.statuses_timers[.Poison] += dt
+		if enemy.statuses_timers[.Poison] >= ENEMY_POISON_DMG_TIME {
+			enemy.statuses_timers[.Poison] = 0
+			poison_dmg_enemy(enemy, game_data.poison_dmg)
 		}
 	}
 
 	if enemy.statuses[.Frozen] {
-		enemy.freeze_timer += dt
-		if enemy.freeze_timer >= ENEMY_FREEZE_TIME {
+		enemy.statuses_timers[.Frozen] += dt
+		if enemy.statuses_timers[.Frozen] >= ENEMY_FREEZE_TIME {
 			enemy.statuses[.Frozen] = false
-			enemy.freeze_timer = 0
+			enemy.statuses_timers[.Frozen] = 0
 		}
+
+
 	}
 
 	switch (enemy.type) {

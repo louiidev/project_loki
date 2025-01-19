@@ -167,9 +167,7 @@ update_render_particles :: proc(dt: f32) {
 		}
 
 
-		xform :=
-			linalg.matrix4_translate(Vector3{particle.position.x, particle.position.y, 0.0}) *
-			linalg.matrix4_rotate(particle.rotation, Vector3{0, 0, 1})
+		xform := transform_2d(particle.position, particle.rotation, particle.scale)
 
 		uvs := get_frame_uvs(
 			.sprite_particles,
@@ -190,5 +188,6 @@ create_bullet_death :: proc(projectile: ^Projectile) {
 	sp.animation_count = 7
 	sp.time_per_frame = 0.05
 	sp.rotation = projectile.rotation
+	sp.scale = projectile.scale
 	append(&game_data.sprite_particles, sp)
 }

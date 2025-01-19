@@ -249,6 +249,7 @@ GameRunState :: struct {
 	chance_bomb_drop_reload:              f32,
 	chance_for_piercing_shot:             f32,
 	explosive_dmg:                        f32,
+	bullet_scale:                         f32,
 
 
 	// camera shake
@@ -1365,7 +1366,7 @@ game_play :: proc() {
 
 			shadows_xform := transform_2d(enemy.position + {-1, -3})
 			if enemy.state == .JUMPING {
-				shadows_xform = transform_2d({enemy.position.x, enemy.ground_y} + {-1, -3})
+				shadows_xform = transform_2d({enemy.position.x, enemy.ground_y} + {0, -3})
 			}
 
 			if enemy.state == .WALKING {
@@ -1377,6 +1378,13 @@ game_play :: proc() {
 			if enemy.flip_x {
 				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
 			}
+
+
+			if enemy.type == .TANK {
+				xform *= linalg.matrix4_scale_f32({1.5, 1.5, 1})
+				shadows_xform *= linalg.matrix4_scale_f32({1.5, 1.5, 1})
+			}
+
 			sprite_y_index: int = auto_cast enemy.type
 			update_entity_timers(&enemy, dt)
 
@@ -1405,7 +1413,7 @@ game_play :: proc() {
 					attack_indicator_size,
 					.bull_attack_indicator,
 					DEFAULT_UV,
-					COLOR_WHITE,
+					COLOR_WHITE - {0, 0, 0, 0.3},
 				)
 			}
 
@@ -1457,6 +1465,21 @@ game_play :: proc() {
 				)
 			}
 
+			if enemy.statuses[.Frozen] {
+				xform := transform_2d(enemy.position + {0.0, 25})
+				uv := get_frame_uvs(.statues, {0, 0}, {16, 16})
+				draw_quad_center_xform(xform, {16, 16}, .statues, uv)
+			}
+
+			if enemy.statuses[.Poison] {
+				uv := get_frame_uvs(.statues, {0, 1}, {16, 16})
+				xform := transform_2d(enemy.position + {0.0, 25})
+				if enemy.flip_x {
+					xform *= linalg.matrix4_scale_f32({-1, 1, 1})
+				}
+				draw_quad_center_xform(xform, {16, 16}, .statues, uv)
+			}
+
 		}
 
 
@@ -1504,7 +1527,7 @@ game_play :: proc() {
 						   circles_overlap(p.position, 6, e.position, 6)) {
 
 						e.stun_timer = game_data.enemy_stun_time
-						if p.hits >= game_data.player_upgrade[Upgrade.PIERCING_SHOT] {
+						if !should_spawn_upgrade(.PIERCING_SHOT) {
 							p.active = false
 
 							if game_data.player_upgrade[Upgrade.BOUNCE_SHOT] > p.bounce_count {
@@ -1595,9 +1618,8 @@ game_play :: proc() {
 
 			}
 
-			xform :=
-				linalg.matrix4_translate(Vector3{p.position.x, p.position.y, 0.0}) *
-				linalg.matrix4_rotate(p.rotation, Vector3{0, 0, 1})
+			xform := transform_2d(p.position, p.rotation, p.scale)
+
 
 			uvs := get_frame_uvs(
 				.projectiles,

@@ -13,18 +13,22 @@ Upgrade :: enum {
 	MAX_HEALTH,
 	AMMO_UPGRADE,
 	BULLETS,
+	BIGGER_BULLETS,
+	BULLET_DMG,
+	BULLETS_CAUSE_POISION,
+	BULLETS_CAUSE_FREEZE,
+	BULLET_RANGE_UP,
 	EXPLODING_ENEMIES,
+	CRITS_CAUSE_EXPLOSIONS,
 	PICKUP_RADIUS,
 	WALKING_SPEED,
 	STUN_TIME,
-	BIGGER_BULLETS,
+	
 	BOMB_DROP_RELOAD,
 	PIERCING_SPIKE_RELOAD,
 	ROTATING_ORB,
 	ORB_DAMAGE_INCREASE,
-	BULLET_DMG,
-	BULLETS_CAUSE_POISION,
-	BULLETS_CAUSE_FREEZE,
+
 	INCREASE_POISION_DMG,
 	INCREASE_FREEZE_SLOWDOWN,
 	INCREASE_EXPLOSIVE_DMG,
@@ -117,6 +121,8 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Bullets +1"
 	case .EXPLODING_ENEMIES:
 		return "Enemies Explode on Death"
+	case .CRITS_CAUSE_EXPLOSIONS:
+		return "Crits cause Explosion"
 	case .PICKUP_RADIUS:
 		return "Increased Pickup Radius"
 	case .WALKING_SPEED:
@@ -149,6 +155,8 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Poision Slowdown"
 	case .INCREASE_POISON_SLOWDOWN:
 		return "Increase Poison Slowdown"
+	case .BULLET_RANGE_UP:
+		return "Increase Bullet range"
 	}
 
 
@@ -179,6 +187,8 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return "Upgrades the amount of bullets you fire by 1+"
 	case .EXPLODING_ENEMIES:
 		return fmt.tprintf("%.0f%% chance an enemy explodes on death", percentage)
+	case .CRITS_CAUSE_EXPLOSIONS:
+			return "If enemy dies by crit, it will explode"
 	case .PICKUP_RADIUS:
 		return fmt.tprintf("Increases Radius by %.0f%%", percentage)
 	case .WALKING_SPEED:
@@ -211,6 +221,8 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 			return fmt.tprintf("Increases Poison Slowdown by %.0f%%", percentage)
 	case .POISON_CAUSES_SLOWDOWN:
 			return fmt.tprintf("Poision enemies are slower", percentage)
+	case .BULLET_RANGE_UP:
+			return fmt.tprintf("Increases Bullet Range by %.0f%%", percentage)
 	}
 
 
@@ -236,12 +248,12 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 
 	switch (shop_upgrade.upgrade) {
 
-	case .BIGGER_BULLETS:
 	case .BOUNCE_SHOT:
 	case .BULLETS:
 	case .ROTATING_ORB:
 	case .PIERCING_SPIKE_RELOAD:
 	case .POISON_CAUSES_SLOWDOWN:
+	case .CRITS_CAUSE_EXPLOSIONS:
 
 
 	case .AMMO_UPGRADE:
@@ -265,6 +277,8 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 			PLAYER_MIN_POSSIBLE_RELOAD_TIME,
 			game_data.time_to_reload - (game_data.time_to_reload * 0.05),
 		)
+	case .BIGGER_BULLETS:
+		increase_upgrade_by_percentage(percentage, &game_data.bullet_scale)
 	case .WALKING_SPEED:
 		increase_upgrade_by_percentage(percentage, &game_data.player.speed)
 		increase_upgrade_by_percentage(percentage, &game_data.player.speed_while_shooting)
@@ -296,6 +310,8 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 
 	case .PIERCING_SHOT:
 		increase_upgrade_by_percentage(percentage, &game_data.chance_for_piercing_shot)
+	case .BULLET_RANGE_UP:
+		increase_upgrade_by_percentage(percentage, &game_data.bullet_range)
 
 
 	}
@@ -324,6 +340,8 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 		return 6
 	case .EXPLODING_ENEMIES:
 		return 1
+	case .CRITS_CAUSE_EXPLOSIONS:
+		return 3
 	case .PICKUP_RADIUS:
 		return 1
 	case .WALKING_SPEED:
@@ -356,6 +374,9 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 		return 1
 	case .POISON_CAUSES_SLOWDOWN:
 		return 2
+	case .BULLET_RANGE_UP:
+		return 1
+
 	}
 
 	return 0
@@ -383,6 +404,8 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return 0.1
 	case .EXPLODING_ENEMIES:
 		return 0.3
+	case .CRITS_CAUSE_EXPLOSIONS:
+		return only_if_dont_have_upgrade(.CRITS_CAUSE_EXPLOSIONS) * 0.1
 	case .PICKUP_RADIUS:
 		return 0.3
 	case .WALKING_SPEED:
@@ -411,6 +434,8 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return only_if_has_upgrade(.BULLETS_CAUSE_FREEZE) * 0.1
 	case .INCREASE_EXPLOSIVE_DMG:
 		return 0.1
+	case .BULLET_RANGE_UP:
+		return 0.3
 	case .POISON_CAUSES_SLOWDOWN:
 		return(
 			only_if_has_upgrade(.BULLETS_CAUSE_POISION) *
@@ -470,6 +495,8 @@ get_chance_percentage :: proc(upgrade: Upgrade) -> f32 {
 	case .INCREASE_EXPLOSIVE_DMG:
 	case .INCREASE_POISON_SLOWDOWN:
 	case .POISON_CAUSES_SLOWDOWN:
+	case .BULLET_RANGE_UP:
+	case .CRITS_CAUSE_EXPLOSIONS:
 
 	case .PIERCING_SHOT:
 		return game_data.chance_for_piercing_shot
