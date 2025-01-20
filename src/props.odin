@@ -16,6 +16,8 @@ PropType :: enum {
 	cross,
 	brick2,
 	mud2,
+	skull,
+	skull2,
 }
 
 
@@ -123,6 +125,8 @@ get_prop_base_propability :: proc(prop_type: PropType) -> f32 {
 		return 0.3
 	case .small_shrub:
 		return 0.43
+	case .skull, .skull2:
+		return 0.1
 	}
 
 	return 0

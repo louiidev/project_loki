@@ -90,3 +90,10 @@ play_sound :: proc(
 fmod_error_check :: proc(result: fcore.RESULT) {
 	assert(result == .OK, fcore.error_string(result))
 }
+
+
+stop_sound :: proc(instance: ^fstudio.EVENTINSTANCE) {
+	using fstudio
+	using sound_st
+	fmod_error_check(EventInstance_Stop(instance, .STOP_ALLOWFADEOUT))
+}

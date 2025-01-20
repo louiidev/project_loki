@@ -2,6 +2,7 @@ package main
 
 import "base:intrinsics"
 import "core:math"
+import "core:math/ease"
 import "core:math/linalg"
 
 
@@ -77,3 +78,30 @@ generate_points_rotation_around_circle :: proc(
 
 	return points, rotations
 }
+
+ease_over_time :: proc(
+	current_t: f32,
+	max_t: f32,
+	type: ease.Ease,
+	start_value: f32,
+	end_value: f32,
+) -> f32 {
+	t := current_t / max_t
+	eased_t := ease.ease(type, t)
+
+	return start_value + eased_t * (end_value - start_value)
+}
+
+
+// ease_over_time :: proc (
+// 	current_t, max_t: f32,
+// 	ease_fn: proc "contextless" (p: $T) -> T),
+// 	start_value: T,
+// 	end_value: T,
+// ) -> T {
+
+// 	t: f32 = current_t / max_t
+// 	eased_t := ease_fn(t)
+
+// 	return start_value + eased_t * (end_value - start_value)
+// }

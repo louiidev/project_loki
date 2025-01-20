@@ -118,7 +118,7 @@ create_bby_slug :: proc(position: Vector2) -> Enemy {
 
 create_explosive_chaser :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(10, position)
+	enemy.entity = create_entity(30, position)
 	enemy.type = .EXPLOSIVE_CHASER
 	enemy.speed = 15
 	enemy.id = last_id
@@ -432,11 +432,6 @@ bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 
 }
 
-cactus_update_logic :: proc(entity: ^Entity, dt: f32) {
-	if circles_overlap(entity.position, entity.collision_radius, game_data.player.position, 4) {
-		damage_player(1, .physical)
-	}
-}
 
 get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	switch (enemy_type) {

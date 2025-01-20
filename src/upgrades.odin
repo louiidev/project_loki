@@ -231,11 +231,13 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 
 
 increase_upgrade_by_percentage :: proc(percentage: f32, upgrade: ^f32) {
-	upgrade^ += upgrade^ * (percentage / 100)
+	upgrade^ = math.max((percentage / 100), upgrade^ + upgrade^ * (percentage / 100))
 }
 
 decrease_upgrade_by_percentage :: proc(percentage: f32, upgrade: ^f32) {
+	
 	upgrade^ -= upgrade^ * (percentage / 100)
+
 }
 
 
@@ -437,7 +439,7 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 	case .BULLET_RANGE_UP:
 		return 0.3
 	case .POISON_CAUSES_SLOWDOWN:
-		return(
+		return (
 			only_if_has_upgrade(.BULLETS_CAUSE_POISION) *
 			0.1 *
 			only_if_dont_have_upgrade(.POISON_CAUSES_SLOWDOWN)
@@ -467,7 +469,10 @@ should_spawn_upgrade :: proc(upgrade: Upgrade) -> bool {
 	if game_data.player_upgrade[upgrade] == 0 {
 		return false
 	}
-	return (get_chance_percentage(upgrade) * 100) >= (rand.float32_range(0.01, 1.0) * 100)
+	rand_chance:= rand.float32_range(0.01, 1.0) * 100.0
+	log(upgrade, get_chance_percentage(upgrade) * 100.0, rand_chance)
+	
+	return (get_chance_percentage(upgrade) * 100) >= rand_chance
 
 
 }

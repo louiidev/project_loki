@@ -14,6 +14,8 @@ Particle :: struct {
 	color:            Vector4,
 	imageId:          ImageId,
 	uv:               Vector4,
+	delay:            f32,
+	delay_start:      f32,
 }
 
 
@@ -29,6 +31,7 @@ SpriteParticle :: struct {
 
 
 PARTICLE_LIFETIME: f32 : 0.5
+PARTICLE_EXPLOSION_LIFETIME: f32 : 1.5
 
 PARTICLE_VELOCITY: f32 : 50
 
@@ -45,7 +48,7 @@ spawn_particles :: proc(position: Vector2, color: Vector4 = COLOR_WHITE) {
 		particle.color = color
 		particle.lifetime = PARTICLE_LIFETIME
 		particle.size = 5.0 + rand.float32_range(-1.5, 1.5)
-
+		particle.uv = DEFAULT_UV
 
 		particle.velocity =
 			{math.cos(rand_direction), math.sin(rand_direction)} * PARTICLE_VELOCITY
@@ -54,32 +57,47 @@ spawn_particles :: proc(position: Vector2, color: Vector4 = COLOR_WHITE) {
 }
 
 
-spawn_bullet_partciles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
-	num_particles := rand.int_max(1) + 1
-	last_dir: f32 = 0
-	for i := 0; i < num_particles; i += 1 {
+spawn_explosion_particles :: proc(position: Vector2, size: f32, color: Vector4) {
+	points, angles := generate_points_rotation_around_circle(size / 2, 8, 360)
 
-		rand_direction: Vector2 = {0, rand.float32_range(-.5, .5)}
 
+	for i := 0; i < len(points); i += 1 {
+
+		angle_radians := angles[i]
+		opposite_direction: Vector2 = {
+			math.cos(angle_radians), // Negative cosine for opposite direction
+			math.sin(angle_radians), // Negative sine for opposite direction
+		}
+
+		p_size := 30.0 + rand.float32_range(-5, 10.5)
+		point_position := points[i]
+		color := color
+		color.a = 0.5
 		particle: Particle
-		particle.position = position + rand_direction
+		particle.delay_start = 0.5
+		particle.delay = 0.1
+		particle.position = position + point_position - opposite_direction * p_size * 0.2
 		particle.active = true
 		particle.color = color
-		particle.color.a = 0.3
-		particle.lifetime = PARTICLE_LIFETIME * 0.3
-		particle.size = 3.0 + rand.float32_range(0, 1.5)
+		particle.lifetime = PARTICLE_EXPLOSION_LIFETIME
+		particle.size = 20.0 + rand.float32_range(-5, 10.5)
 		particle.imageId = .circle
 		particle.uv = get_frame_uvs(.circle, {0, 0}, {64, 64})
 
 
-		particle.velocity = {math.cos(direction.x), math.sin(direction.y)} * PARTICLE_VELOCITY
+		particle.velocity = {}
 		append(&game_data.particles, particle)
 	}
+
+	delete(points)
+	delete(angles)
 }
+
 
 spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
 	num_particles := rand.int_max(1) + 1
 	last_dir: f32 = 0
+
 	for i := 0; i < num_particles; i += 1 {
 
 		rand_direction: f32 = rand.float32_range(-1.5, 1.5)
@@ -94,9 +112,10 @@ spawn_walking_particles :: proc(position: Vector2, color: Vector4, direction: Ve
 		particle.uv = get_frame_uvs(.circle, {0, 0}, {64, 64})
 
 
-		particle.velocity = {math.cos(direction.x), math.sin(direction.y)} * PARTICLE_VELOCITY
+		particle.velocity = {}
 		append(&game_data.particles, particle)
 	}
+
 }
 
 spawn_orb_particles :: proc(position: Vector2, color: Vector4, direction: Vector2) {
@@ -121,23 +140,36 @@ update_render_particles :: proc(dt: f32) {
 	for &particle in &game_data.particles {
 
 		if !particle.active {
+
+			continue
+		}
+		if particle.delay > 0 {
+			particle.delay -= dt
 			continue
 		}
 
-		particle.current_lifetime += dt
+
+		if particle.delay_start > 0 {
+			particle.delay_start -= dt
+		}
+		current_size := particle.size
+		if particle.delay <= 0 {
+			particle.current_lifetime += dt
 
 
-		normalized_life := particle.current_lifetime / particle.lifetime
-		scale := (1.0 - normalized_life) * (1.0 - normalized_life)
+			normalized_life := particle.current_lifetime / particle.lifetime
+			scale := (1.0 - normalized_life) * (1.0 - normalized_life)
 
-		current_size := particle.size * scale
-		if current_size <= 0 || particle.current_lifetime >= particle.lifetime {
-			particle.active = false
+			current_size = particle.size * scale
+			if current_size <= 0 || particle.current_lifetime >= particle.lifetime {
+				particle.active = false
 
+			}
+
+			current_velocity := particle.velocity * scale
+			particle.position += current_velocity * dt
 		}
 
-		current_velocity := particle.velocity * scale
-		particle.position += current_velocity * dt
 		draw_quad_center_xform(
 			transform_2d(particle.position),
 			{current_size, current_size},

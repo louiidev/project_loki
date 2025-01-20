@@ -215,11 +215,11 @@ image_button :: proc(
 	if !disabled && aabb_contains(position, size, mouse_world_position) {
 		ui_state.hover_id = id
 		x_frame = 1
-		hover_position += 3
+		hover_position.y += 5
 	}
 	if !disabled && inputs.mouse_down[sapp.Mousebutton.LEFT] && ui_state.hover_id == id {
 		ui_state.down_clicked_id = id
-		x_frame = 2
+		hover_position.y -= 5
 	}
 
 

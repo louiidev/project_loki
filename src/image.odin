@@ -36,6 +36,8 @@ ImageId :: enum {
 	bull_attack_indicator,
 	bomb,
 	statues,
+	logo,
+	background,
 }
 
 
@@ -47,7 +49,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.enemies               = {2, len(EnemyType)},
 	.spawn_indicator       = {1, 1},
 	.level_bounds          = {1, 1},
-	.money                 = {8, 1},
+	.money                 = {8, 3},
 	.circle                = {3, 1},
 	.tiles                 = {2, 2},
 	.cursor                = {1, 1},
@@ -65,6 +67,8 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.bull_attack_indicator = {1, 1},
 	.bomb                  = {4, 1},
 	.statues               = {1, 2},
+	.logo                  = {1, 1},
+	.background            = {1, 1},
 }
 
 
@@ -151,7 +155,7 @@ Atlas :: struct {
 	sg_image: sg.Image,
 }
 atlas: Atlas
-atlas_width :: 1024
+atlas_width :: 2048
 // We're hardcoded to use just 1 atlas now since I don't think we'll need more
 // It would be easy enough to extend though. Just add in more texture slots in the shader
 pack_images_into_atlas :: proc() {

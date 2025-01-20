@@ -19,7 +19,75 @@ import "core:strconv"
 import "core:strings"
 import t "core:time"
 
+
 log :: fmt.println
+
+
+GameRunState :: struct {
+	enemies:                              [dynamic]Enemy,
+	projectiles:                          [dynamic]Projectile,
+	particles:                            [dynamic]Particle,
+	environment_prop:                     [dynamic]EnvironmentProp,
+	sprite_particles:                     [dynamic]SpriteParticle,
+	permanence:                           [dynamic]Permanence,
+	popup_text:                           [dynamic]PopupText,
+	bombs:                                [dynamic]Bomb,
+	player:                               Entity,
+	pickups:                              [dynamic]Pickup,
+	enemy_spawn_timer:                    f32,
+	money:                                int,
+	ticks:                                u64,
+	rolldown_cooldown_timer:              f32,
+
+	// waves
+	current_wave:                         int,
+	time_left_in_wave:                    f32,
+	timer_to_show_player_death_ui:        f32,
+	timer_to_show_player_death_animation: f32,
+	reroll_cost:                          int,
+
+	// upgrades
+	slowdown_multiplier:                  f32,
+	timer_to_show_upgrade:                f32,
+	next_upgrades:                        [3]ShopUpgrade,
+	player_upgrade:                       [Upgrade]int,
+	max_bullets:                          int,
+	current_bullets_count:                int,
+	money_pickup_radius:                  f32,
+	bullet_velocity:                      f32,
+	bullet_spread:                        f32,
+	bullet_range:                         f32,
+	time_to_reload:                       f32,
+	enemy_stun_time:                      f32,
+	crit_chance:                          f32,
+	orb_damage_per_hit:                   f32,
+	bullet_dmg:                           f32,
+	poison_dmg:                           f32,
+	freeze_slowdown:                      f32,
+	poison_slowdown:                      f32,
+	bullet_freeze_chance:                 f32,
+	bullet_poision_chance:                f32,
+	chance_enemy_explodes:                f32,
+	chance_bomb_drop_reload:              f32,
+	chance_for_piercing_shot:             f32,
+	explosive_dmg:                        f32,
+	bullet_scale:                         f32,
+
+
+	// camera shake
+	camera_zoom:                          f32,
+	shake_amount:                         f32,
+	ui_state:                             GameUIState,
+	timers:                               [dynamic]Timer,
+	world_time_elapsed:                   f32,
+	explosions:                           [dynamic]Explosion,
+	knockback_radius_timer:               f32,
+	knockback_hold_timer:                 f32,
+	knockback_position:                   Vector2,
+	// STATS
+	enemies_killed:                       u32,
+	money_earned:                         u32,
+}
 
 
 AnimationState :: enum {
@@ -128,6 +196,7 @@ PLAYER_INITIAL_BULLET_DMG: f32 : 10
 PLAYER_INITIAL_POISION_DMG: f32 : 1.0
 PLAYER_INITIAL_FREEZE_SLOWDOWN: f32 : 0.75
 INITIAL_EXPLOSIVE_DMG: f32 : 15
+INITIAL_FREEZE_SLOWDOWN: f32 : 0.75
 
 PLAYER_GUN_MOVE_DIST: f32 : 8.0
 
@@ -138,6 +207,7 @@ PLAYER_KNOCKBACK_VELOCITY :: 120
 
 
 REROLL_COST_MODIFIER :: 2
+INITIAL_REROLL_COST :: 1
 
 
 IDLE_ANIMATION_TIME :: 0.6
@@ -190,83 +260,28 @@ Explosion :: struct {
 }
 
 
+PickupType :: enum {
+	Money,
+	Health,
+	Ammo,
+}
+
 MONEY_ANIM_FRAMES :: 8
 MONEY_ANIM_TIME_PER_FRAME: f32 : 0.1
-MoneyPickup :: struct {
+Pickup :: struct {
 	using _:                 BaseEntity,
 	picked_up:               bool,
 	current_animation_frame: int,
 	current_animation_timer: f32,
 	start_pos:               Vector2,
 	current_pickup_time:     f32,
+	type:                    PickupType,
+	amount:                  int,
 }
 
-GameRunState :: struct {
-	enemies:                              [dynamic]Enemy,
-	projectiles:                          [dynamic]Projectile,
-	particles:                            [dynamic]Particle,
-	environment_prop:                     [dynamic]EnvironmentProp,
-	sprite_particles:                     [dynamic]SpriteParticle,
-	permanence:                           [dynamic]Permanence,
-	popup_text:                           [dynamic]PopupText,
-	bombs:                                [dynamic]Bomb,
-	player:                               Entity,
-	money_pickups:                        [dynamic]MoneyPickup,
-	enemy_spawn_timer:                    f32,
-	money:                                int,
-	ticks:                                u64,
-	rolldown_cooldown_timer:              f32,
-
-	// waves
-	current_wave:                         int,
-	time_left_in_wave:                    f32,
-	timer_to_show_player_death_ui:        f32,
-	timer_to_show_player_death_animation: f32,
-	reroll_cost:                          int,
-
-	// upgrades
-	slowdown_multiplier:                  f32,
-	timer_to_show_upgrade:                f32,
-	next_upgrades:                        [3]ShopUpgrade,
-	player_upgrade:                       [Upgrade]int,
-	max_bullets:                          int,
-	current_bullets_count:                int,
-	money_pickup_radius:                  f32,
-	bullet_velocity:                      f32,
-	bullet_spread:                        f32,
-	bullet_range:                         f32,
-	time_to_reload:                       f32,
-	enemy_stun_time:                      f32,
-	crit_chance:                          f32,
-	orb_damage_per_hit:                   f32,
-	bullet_dmg:                           f32,
-	poison_dmg:                           f32,
-	freeze_slowdown:                      f32,
-	poison_slowdown:                      f32,
-	bullet_freeze_chance:                 f32,
-	bullet_poision_chance:                f32,
-	chance_enemy_explodes:                f32,
-	chance_bomb_drop_reload:              f32,
-	chance_for_piercing_shot:             f32,
-	explosive_dmg:                        f32,
-	bullet_scale:                         f32,
-
-
-	// camera shake
-	camera_zoom:                          f32,
-	shake_amount:                         f32,
-	ui_state:                             GameUIState,
-	timers:                               [dynamic]Timer,
-	world_time_elapsed:                   f32,
-	explosions:                           [dynamic]Explosion,
-
-	// STATS
-	enemies_killed:                       u32,
-	money_earned:                         u32,
-}
 
 game_data: GameRunState
-app_state: AppState = .GamePlay
+app_state: AppState = .MainMenu
 
 camera: Camera
 
@@ -274,7 +289,7 @@ camera: Camera
 restart_run :: proc() {
 	// eventually Ill put in a fade out
 
-	cleanup_scene()
+	reset_scene()
 
 
 	setup_run()
@@ -288,6 +303,7 @@ setup_run :: proc() {
 	game_data.max_bullets = PLAYER_INITIAL_BULLETS
 	game_data.bullet_range = PLAYER_INITIAL_BULLET_RANGE
 	game_data.current_wave = 1
+	game_data.reroll_cost = INITIAL_REROLL_COST
 	game_data.time_left_in_wave = INITIAL_WAVE_TIME
 	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
 	game_data.money_pickup_radius = PLAYER_INITIAL_PICKUP_RADIUS
@@ -301,6 +317,9 @@ setup_run :: proc() {
 	game_data.enemy_stun_time = INITIAL_STUN_TIME
 	game_data.poison_dmg = PLAYER_INITIAL_POISION_DMG
 	game_data.explosive_dmg = INITIAL_EXPLOSIVE_DMG
+	game_data.freeze_slowdown = INITIAL_FREEZE_SLOWDOWN
+
+
 	setup_scene_props()
 }
 
@@ -435,6 +454,7 @@ create_explosion :: proc(position: Vector2) {
 	}
 
 	create_explosion_permanence(&explosion)
+	spawn_explosion_particles(position, size, hex_to_rgb(0x25131a))
 }
 
 
@@ -463,7 +483,10 @@ damage_player :: proc(damage_amount: f32, dmg_type: DamageType) {
 }
 
 
+KNOCKBACK_RADIUS_TIME: f32 : 0.5
 knockback_enemies_in_radius :: proc(player: ^Entity, radius: f32) {
+	game_data.knockback_radius_timer = KNOCKBACK_RADIUS_TIME
+	game_data.knockback_position = player.position
 	for &enemy in game_data.enemies {
 		if circles_overlap(player.position, radius, enemy.position, enemy.collision_radius) {
 			knockback_enemy(&enemy, linalg.normalize(enemy.position - player.position))
@@ -632,7 +655,27 @@ cleanup_scene :: proc() {
 		e.active = false
 		spawn_particles(e.position)
 	}
-	for &xp in game_data.money_pickups {
+	for &pickup in game_data.pickups {
+		pickup.active = false
+	}
+	for &p in game_data.projectiles {
+		p.active = false
+
+		spawn_particles(p.position)
+	}
+
+	for &b in game_data.bombs {
+		b.active = false
+	}
+}
+
+
+reset_scene :: proc() {
+	for &e in game_data.enemies {
+		e.active = false
+		spawn_particles(e.position)
+	}
+	for &xp in game_data.pickups {
 		xp.active = false
 	}
 	for &p in game_data.projectiles {
@@ -829,65 +872,134 @@ game_play :: proc() {
 	}
 
 
+	{
+
+		if game_data.knockback_radius_timer > 0 {
+			game_data.knockback_radius_timer -= dt
+			if game_data.knockback_radius_timer <= 0 {
+				game_data.knockback_hold_timer = KNOCKBACK_RADIUS_TIME
+				game_data.knockback_radius_timer = 0
+			}
+		}
+
+		if game_data.knockback_radius_timer > 0 || game_data.knockback_hold_timer > 0 {
+			alpha: f32 = 0
+			if game_data.knockback_hold_timer > 0 {
+				game_data.knockback_hold_timer -= dt
+
+				alpha = ease_over_time(
+					game_data.knockback_hold_timer,
+					KNOCKBACK_RADIUS_TIME,
+					.Bounce_In,
+					1.0,
+					0.0,
+				)
+			}
+			current := ease_over_time(
+				game_data.knockback_radius_timer,
+				KNOCKBACK_RADIUS_TIME,
+				.Bounce_In,
+				60,
+				1,
+			)
+			draw_quad_center_xform(
+				transform_2d(game_data.knockback_position),
+				{current, current},
+				.circle,
+				get_frame_uvs(.circle, {1, 0}, {64, 64}),
+				COLOR_WHITE - {0, 0, 0, alpha},
+			)
+		}
+	}
+
 	if game_data.ui_state == .none {
 		// XP pickups
-		for &money in &game_data.money_pickups {
-			if !money.picked_up &&
+		for &pickup in &game_data.pickups {
+			if !pickup.picked_up &&
 			   circles_overlap(
-				   money.position,
+				   pickup.position,
 				   game_data.money_pickup_radius,
 				   game_data.player.position,
 				   game_data.player.collision_radius,
 			   ) {
-				// xp.active = false
-				money.picked_up = true
-				game_data.money += 1
-				game_data.money_earned += 1
-				money.start_pos = money.position
+				log(pickup.amount)
+				if pickup.type == .Money {
+					// xp.active = false
+					game_data.money += pickup.amount
+					game_data.money_earned += auto_cast pickup.amount
+				} else if pickup.type == .Health {
+					game_data.player.health = math.min(
+						f32(pickup.amount) + game_data.player.health,
+						game_data.player.max_health,
+					)
+				} else if pickup.type == .Ammo {
+					game_data.current_bullets_count += pickup.amount
+				}
+				pickup.picked_up = true
+
+				pickup.start_pos = pickup.position
+
 
 			}
-			money.current_animation_timer += dt
-			if money.current_animation_timer > MONEY_ANIM_TIME_PER_FRAME {
-				money.current_animation_timer = 0
-				if money.current_animation_frame >= MONEY_ANIM_FRAMES - 1 {
-					money.current_animation_frame = 0
+			pickup.current_animation_timer += dt
+			if pickup.current_animation_timer > MONEY_ANIM_TIME_PER_FRAME {
+				pickup.current_animation_timer = 0
+				if pickup.current_animation_frame >= MONEY_ANIM_FRAMES - 1 {
+					pickup.current_animation_frame = 0
 				} else {
-					money.current_animation_frame += 1
+					pickup.current_animation_frame += 1
 				}
 			}
 
-			if money.picked_up {
+			if pickup.picked_up {
 
 				time_to_pickup: f32 = 0.75
-				money.current_pickup_time += dt
-				t: f32 = money.current_pickup_time / time_to_pickup
-				eased_t := ease.exponential_in(t)
+				pickup.current_pickup_time += dt
+				using ease
+				pickup.position = {
+					ease_over_time(
+						pickup.current_pickup_time,
+						time_to_pickup,
+						.Exponential_In,
+						pickup.start_pos.x,
+						game_data.player.position.x,
+					),
+					ease_over_time(
+						pickup.current_pickup_time,
+						time_to_pickup,
+						.Exponential_In,
+						pickup.start_pos.y,
+						game_data.player.position.y,
+					),
+				}
 
-				start_value_x: f32 = money.start_pos.x
-				end_value_x: f32 = game_data.player.position.x
-				current_value_x := start_value_x + eased_t * (end_value_x - start_value_x)
-
-
-				start_value_y: f32 = money.start_pos.y
-				end_value_y: f32 = game_data.player.position.y
-				current_value_y := start_value_y + eased_t * (end_value_y - start_value_y)
-
-				money.position = {current_value_x, current_value_y}
-				if linalg.distance(money.position, game_data.player.position) <= 4 {
-					money.active = false
+				if linalg.distance(pickup.position, game_data.player.position) <= 4 {
+					pickup.active = false
 					popup_txt: PopupText = DEFAULT_POPUP_TXT
-					popup_txt.text = fmt.tprintf("$%d", 1)
-					popup_txt.color = hex_to_rgb(0xffd569)
-					popup_txt.position = money.position
+					if pickup.type == .Money {
+						popup_txt.text = fmt.tprintf("$%d", pickup.amount)
+						popup_txt.color = hex_to_rgb(0xffd569)
+					} else {
+						popup_txt.text = fmt.tprintf("+%d", pickup.amount)
+						popup_txt.color =
+							pickup.type == .Health ? hex_to_rgb(0xe84444) : hex_to_rgb(0xffd569)
+					}
+
+
+					popup_txt.position = pickup.position
 					append(&game_data.popup_text, popup_txt)
 				}
 			}
 
-			draw_pos := money.position
+			draw_pos := pickup.position
 			draw_pos.y += sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 6
 			xform := translate_mat4({draw_pos.x, draw_pos.y, 0.0})
 
-			uvs := get_frame_uvs(.money, {money.current_animation_frame, 0}, {16, 16})
+			uvs := get_frame_uvs(
+				.money,
+				{pickup.current_animation_frame, auto_cast pickup.type},
+				{16, 16},
+			)
 			draw_quad_center_xform(xform, {12, 12}, .money, uvs, COLOR_WHITE)
 		}
 	}
@@ -899,6 +1011,8 @@ game_play :: proc() {
 		// PLAYER LOGIC
 		using game_data
 
+
+		allow_ingame_user_input := game_data.ui_state == .none && player.active
 
 		// if can_player_move {
 		x := f32(int(inputs.button_down[D]) - int(inputs.button_down[A]))
@@ -922,7 +1036,7 @@ game_play :: proc() {
 
 		speed := player.speed
 
-		if inputs.button_just_pressed[Keycode.SPACE] {
+		if allow_ingame_user_input && inputs.button_just_pressed[Keycode.SPACE] {
 			if player.dodge_roll_cooldown <= 0 && player.animation_state != .ROLLING {
 				direction: Vector2 = player_input != V2_ZERO ? player_input : {1, 0}
 				player.velocity = direction * PLAYER_DODGE_ROLL_PWR
@@ -976,7 +1090,8 @@ game_play :: proc() {
 			}
 		}
 
-		if inputs.mouse_down[Mousebutton.LEFT] &&
+		if allow_ingame_user_input &&
+		   inputs.mouse_down[Mousebutton.LEFT] &&
 		   player.weapon_cooldown_timer <= 0 &&
 		   game_data.current_bullets_count > 0 &&
 		   player.reload_timer <= 0 {
@@ -1023,8 +1138,7 @@ game_play :: proc() {
 					bomb.position = game_data.player.position
 					append(&game_data.bombs, bomb)
 				}
-				game_data.player_upgrade[.PIERCING_SPIKE_RELOAD] = 1
-				if should_spawn_upgrade(.PIERCING_SPIKE_RELOAD) {
+				if game_data.player_upgrade[.PIERCING_SPIKE_RELOAD] >= 1 {
 					create_quintuple_projectiles_spikes(game_data.player.position, .ENEMY)
 				}
 			}
@@ -1275,11 +1389,32 @@ game_play :: proc() {
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
-				mp: MoneyPickup
-				mp.position = enemy.position
-				mp.active = true
-				mp.picked_up = false
-				append(&game_data.money_pickups, mp)
+				r_n := rand.int_max(10)
+
+
+				if r_n <= 8 {
+					amount := 1
+					type: PickupType = .Health
+					if r_n <= 3 {
+						amount = rand.int_max(8) + 1
+						type = .Money
+					} else if r_n <= 6 {
+						amount = rand.int_max(6) + 1
+						type = .Ammo
+					} else {
+						amount = rand.int_max(1) + 1
+					}
+
+					mp: Pickup
+					mp.position = enemy.position
+					mp.active = true
+					mp.picked_up = false
+					mp.type = type
+					mp.amount = amount
+					append(&game_data.pickups, mp)
+				}
+
+
 				enemy.active = false
 				game_data.enemies_killed += 1
 				if enemy.type == .EXPLOSIVE_CHASER {
@@ -1940,7 +2075,7 @@ game_play :: proc() {
 					2,
 				)
 				draw_text_outlined_center(
-					card_xform * transform_2d({0, -80}),
+					card_xform * transform_2d({0, -100}),
 					fmt.tprintf("$%d", game_data.next_upgrades[i].cost),
 					40,
 					4,
@@ -1979,13 +2114,14 @@ game_play :: proc() {
 				game_data.current_wave += 1
 				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
 				game_data.ui_state = .none
-				game_data.reroll_cost = 0
+				game_data.reroll_cost = INITIAL_REROLL_COST
 				log("bullet speed", game_data.bullet_spread)
 				log("player speed", game_data.player.speed, game_data.player.speed_while_shooting)
 				log("player speed", game_data.player.speed, game_data.player.speed_while_shooting)
 				log("pickup radius", game_data.money_pickup_radius)
 				log("stun time", game_data.enemy_stun_time)
 				log("reload speed", game_data.time_to_reload)
+				reset_scene()
 				setup_scene_props()
 			}
 
@@ -2077,12 +2213,13 @@ game_play :: proc() {
 
 
 	{
+		scale: f32 = 16
 		sapp.show_mouse(false)
-		set_ortho_projection(1.0)
+		set_ortho_projection(scale)
 		mouse_world_position = mouse_to_matrix()
 		draw_quad_center_xform(
-			transform_2d(mouse_world_position),
-			{SPRITE_PIXEL_SIZE, SPRITE_PIXEL_SIZE},
+			transform_2d(mouse_world_position, auto_cast game_data.world_time_elapsed * 0.1),
+			{14 / scale, 14 / scale},
 			.cursor,
 		)
 	}
@@ -2094,7 +2231,7 @@ game_play :: proc() {
 		cleanup_base_entity(&game_data.projectiles)
 		cleanup_base_entity(&game_data.particles)
 		cleanup_base_entity(&game_data.sprite_particles)
-		cleanup_base_entity(&game_data.money_pickups)
+		cleanup_base_entity(&game_data.pickups)
 		cleanup_base_entity(&game_data.explosions)
 		cleanup_base_entity(&game_data.permanence)
 		cleanup_base_entity(&game_data.environment_prop)
@@ -2131,24 +2268,46 @@ reset_ui_state :: proc() {
 
 ui_state: UiState
 
+import fstudio "../fmod/studio"
+has_played_song := false
+main_menu_song_instance: ^fstudio.EVENTINSTANCE
 main_menu :: proc() {
+
+	if !has_played_song {
+		has_played_song = true
+		main_menu_song_instance = play_sound("event:/main_menu")
+	}
+
 	// clear_color = MAIN_MENU_CLEAR_COLOR
 	set_ui_projection_alignment(.center_center)
 	mouse_world_position = mouse_to_matrix()
-	start_btn_pos := V2_ZERO
-	button_height: f32 = 120
-	button_width: f32 = 450
-	padding: f32 = 20
+	start_btn_pos: Vector2 = {0, -40}
+	button_size: Vector2 = {60, 24} * 4.5
+	padding: f32 = 5
+
+	draw_quad_center_xform(
+		transform_2d({0, 0}),
+		{auto_cast sapp.width(), auto_cast sapp.height()},
+		.background,
+		DEFAULT_UV,
+		{1, 1, 1, 0.3},
+	)
+
+	draw_quad_center_xform(transform_2d({0, 180}), {320, 180} * 1.8, .logo)
 
 
-	if bordered_button(start_btn_pos, {button_width, button_height}, "Start Game", 48, 1) {
+	if image_button(start_btn_pos, "Start Game", 38, 1, button_size) {
 		app_state = .GamePlay
+		stop_sound(main_menu_song_instance)
+		play_sound("event:/game_music")
 	}
-	start_btn_pos.y -= button_height + padding
-	if bordered_button(start_btn_pos, {button_width, button_height}, "Options", 48, 2) {
+	start_btn_pos.y -= button_size.y + padding
+	if image_button(start_btn_pos, "Options", 38, 2, button_size) {
 	}
-	start_btn_pos.y -= button_height + padding
-	if bordered_button(start_btn_pos, {button_width, button_height}, "Exit", 48, 3) {
+	start_btn_pos.y -= button_size.y + padding
+	if image_button(start_btn_pos, "Exit", 38, 3, button_size) {
+		log("Exit pressed")
+		sapp.quit()
 	}
 }
 
