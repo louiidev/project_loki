@@ -1,6 +1,7 @@
 package main
 
 import "base:intrinsics"
+import "core:log"
 import "core:math"
 import "core:math/ease"
 import "core:math/linalg"
@@ -10,19 +11,26 @@ almost_equals :: proc(a, b, epsilon: f32) -> bool {
 	return math.abs(a - b) <= epsilon
 }
 
-animate_f32_to_target :: proc(value: ^f32, target: f32, delta_t: f32, rate: f32) -> bool {
-	value^ += (target - value^) * (1 - math.pow(2.0, -rate * delta_t))
-	if (almost_equals(value^, target, 0.001)) {
-		value^ = target
-		return true
-	}
 
+animate_to_target_f32 :: proc(
+	value: ^f32,
+	target: f32,
+	delta_t: f32,
+	rate: f32 = 15.0,
+	good_enough: f32 = 0.001,
+) -> bool {
+	value^ += (target - value^) * (1.0 - math.pow_f32(2.0, -rate * delta_t))
+	if almost_equals(value^, target, good_enough) {
+		value^ = target
+		return true // reached
+	}
 	return false
 }
 
+
 animate_v2_to_target :: proc(value: ^Vector2, target: Vector2, delta_t: f32, rate: f32) {
-	animate_f32_to_target(&value.x, target.x, delta_t, rate)
-	animate_f32_to_target(&value.y, target.y, delta_t, rate)
+	animate_to_target_f32(&value.x, target.x, delta_t, rate)
+	animate_to_target_f32(&value.y, target.y, delta_t, rate)
 }
 
 
@@ -49,7 +57,7 @@ run_every_seconds :: proc(s: f32) -> bool {
 	interval: f32 = s * f32(ticks_per_second)
 
 	if interval < 1.0 {
-		log("run_every_seconds is ticking each frame, can't go faster than this")
+		log.error("run_every_seconds is ticking each frame, can't go faster than this")
 	}
 
 	run := (game_data.ticks % u64(interval)) == 0
@@ -88,6 +96,10 @@ ease_over_time :: proc(
 ) -> f32 {
 	t := current_t / max_t
 	eased_t := ease.ease(type, t)
+
+	// if current_t >= max_t {
+	// 	return end_value
+	// }
 
 	return start_value + eased_t * (end_value - start_value)
 }

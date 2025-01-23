@@ -206,7 +206,7 @@ update_render_particles :: proc(dt: f32) {
 			{particle.sprite_cell_start.x + particle.current_frame, particle.sprite_cell_start.y},
 			{16, 16},
 		)
-		draw_quad_center_xform(xform, {auto_cast 16, auto_cast 16}, .sprite_particles, uvs)
+		draw_quad_center_xform(xform, {16, 16}, .sprite_particles, uvs)
 	}
 
 }
@@ -215,11 +215,79 @@ create_bullet_death :: proc(projectile: ^Projectile) {
 	sp: SpriteParticle
 	sp.active = true
 	sp.position = projectile.position
-	sp.sprite_cell_start = projectile.sprite_cell_start
+	sp.sprite_cell_start = {0, 3}
 	sp.scale = projectile.scale
 	sp.animation_count = 7
-	sp.time_per_frame = 0.05
+	sp.time_per_frame = 0.025
 	sp.rotation = projectile.rotation
 	sp.scale = projectile.scale
 	append(&game_data.sprite_particles, sp)
+}
+
+MIN_BLOOD_VELOCITY: f32 : 80
+MAX_BLOOD_VELOCITY: f32 : 150
+BLOOD_LIFE_TIME: f32 : 20
+MIN_BLOOD_SIZE: f32 : 1.0
+MAX_BLOOD_SIZE: f32 : 3.4
+MIN_RANDOM_SPREAD: f32 : -30
+MAX_RANDOM_SPREAD: f32 : 30
+
+create_blood_particle :: proc(e: ^Entity, attack_direction: Vector2) {
+	amount_of_blood: int = auto_cast rand.float32_range(5, 25)
+	for i := 0; i < amount_of_blood; i += 1 {
+		b: Blood
+		b.active = true
+		b.size = rand.float32_range(MIN_BLOOD_SIZE, MAX_BLOOD_SIZE)
+		b.ground_y = e.position.y - 5
+		b.position = e.position + attack_direction * 5
+
+		b.max_lifetime = BLOOD_LIFE_TIME
+
+
+		random_angle := rand.float32_range(-MIN_RANDOM_SPREAD, MAX_RANDOM_SPREAD) // Assume random_range generates a random value in the range
+
+		// Convert angle to radians
+		radians := math.to_radians(random_angle)
+
+		// Calculate sine and cosine of the angle
+		cos_theta := math.cos(radians)
+		sin_theta := math.sin(radians)
+
+		// Rotate the vector
+		direction: Vector2
+		direction.x = attack_direction.x * cos_theta - attack_direction.y * sin_theta
+		direction.y = attack_direction.x * sin_theta + attack_direction.y * cos_theta
+
+		b.velocity = direction * rand.float32_range(MIN_BLOOD_VELOCITY, MAX_BLOOD_VELOCITY)
+		append(&game_data.blood, b)
+	}
+
+}
+
+
+BLOOD_GRAVITY: f32 : 400
+update_render_blood :: proc(dt: f32) {
+	for &blood in game_data.blood {
+		blood.current_lifetime += dt
+		if blood.current_lifetime >= blood.max_lifetime {
+			blood.active = false
+		}
+
+
+		if blood.position.y <= blood.ground_y {
+			blood.velocity = V2_ZERO
+		} else {
+			blood.velocity.y -= BLOOD_GRAVITY * dt
+			blood.position += blood.velocity * dt
+		}
+
+
+		draw_quad_center_xform(
+			transform_2d(blood.position),
+			{blood.size, blood.size},
+			.circle,
+			get_frame_uvs(.circle, {0, 0}, {64, 64}),
+			hex_to_rgb(0xd01946),
+		)
+	}
 }

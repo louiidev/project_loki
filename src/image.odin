@@ -1,14 +1,16 @@
 package main
 
 import "core:fmt"
+import "core:log"
 import "core:math"
 import "core:math/linalg"
 import "core:mem"
-import "core:os"
+import "os"
 
-import sg "../sokol/gfx"
-import stbi "vendor:stb/image"
-import stbrp "vendor:stb/rect_pack"
+import sg "../vendor/sokol/gfx"
+
+import stbi "../vendor/stb-web/image"
+import stbrp "../vendor/stb-web/rect_pack"
 
 ImageId :: enum {
 	nil,
@@ -38,14 +40,18 @@ ImageId :: enum {
 	statues,
 	logo,
 	background,
+	transition,
+	upgrade_sign,
+	fmod_logo,
+	orb,
 }
 
 
 Image_Column_Rows_Count := [ImageId][2]int {
 	.nil                   = {0, 0},
-	.player                = {6, 3},
+	.player                = {6, 4},
 	.projectiles           = {3, 3},
-	.weapons               = {3, 1},
+	.weapons               = {len(Weapon), 1},
 	.enemies               = {2, len(EnemyType)},
 	.spawn_indicator       = {1, 1},
 	.level_bounds          = {1, 1},
@@ -54,7 +60,7 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.tiles                 = {2, 2},
 	.cursor                = {1, 1},
 	.skull                 = {1, 1},
-	.sprite_particles      = {7, 3},
+	.sprite_particles      = {7, 4},
 	.explosion             = {1, 1},
 	.blood                 = {4, 1},
 	.bullet_shell          = {1, 1},
@@ -69,8 +75,16 @@ Image_Column_Rows_Count := [ImageId][2]int {
 	.statues               = {1, 2},
 	.logo                  = {1, 1},
 	.background            = {1, 1},
+	.transition            = {1, 1},
+	.upgrade_sign          = {1, 1},
+	.fmod_logo             = {1, 1},
+	.orb                   = {1, 1},
 }
 
+
+get_image_size :: proc(id: ImageId) -> Vector2 {
+	return {auto_cast images[id].width, auto_cast images[id].height}
+}
 
 Image :: struct {
 	width, height:    i32,
@@ -103,7 +117,7 @@ init_images :: proc() {
 		path := tprint(img_dir, img_name, ".png", sep = "")
 		img, succ := load_image_from_disk(path)
 		if !succ {
-			fmt.println("failed to load image:", img_name)
+			log.error("failed to load image:", img_name)
 			continue
 		}
 
@@ -123,7 +137,7 @@ load_image_from_disk :: proc(path: string) -> (Image, bool) {
 
 	png_data, succ := os.read_entire_file(path)
 	if !succ {
-		fmt.println("read file failed")
+		log.error("read file failed")
 		return {}, false
 	}
 
@@ -137,7 +151,7 @@ load_image_from_disk :: proc(path: string) -> (Image, bool) {
 		4,
 	)
 	if img_data == nil {
-		fmt.println("stbi load failed, invalid image?")
+		log.error("stbi load failed, invalid image?")
 		return {}, false
 	}
 
@@ -215,15 +229,16 @@ pack_images_into_atlas :: proc() {
 		img.atlas_uvs.z = img.atlas_uvs.x + cast(f32)img.width / cast(f32)atlas.w
 		img.atlas_uvs.w = img.atlas_uvs.y + cast(f32)img.height / cast(f32)atlas.h
 	}
-
-	stbi.write_png(
-		"atlas.png",
-		auto_cast atlas.w,
-		auto_cast atlas.h,
-		4,
-		raw_data,
-		4 * auto_cast atlas.w,
-	)
+	when ODIN_OS == .Windows {
+		stbi.write_png(
+			"atlas.png",
+			auto_cast atlas.w,
+			auto_cast atlas.h,
+			4,
+			raw_data,
+			4 * auto_cast atlas.w,
+		)
+	}
 
 
 	// setup image for GPU
@@ -237,7 +252,7 @@ pack_images_into_atlas :: proc() {
 	}
 	atlas.sg_image = sg.make_image(desc)
 	if atlas.sg_image.id == sg.INVALID_ID {
-		fmt.println("failed to make image")
+		log.info("failed to make image")
 	}
 }
 
@@ -251,7 +266,7 @@ get_frame_uvs :: proc(
 	row_column_data := Image_Column_Rows_Count[sprite_id]
 
 	// We want to reverse the y sprite index since we need to flip the image on load
-	sprite_index_y: int = 0 + max(row_column_data.y - 1) - sprite_index.y
+	sprite_index_y: int = 0 + (row_column_data.y - 1) - sprite_index.y
 
 
 	sprite := images[sprite_id]

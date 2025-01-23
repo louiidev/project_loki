@@ -1,5 +1,5 @@
 package main
-import sapp "../sokol/app"
+import sapp "../vendor/sokol/app"
 import "core:fmt"
 import "core:math"
 import "core:math/ease"
@@ -207,6 +207,8 @@ image_button :: proc(
 	id: UiID,
 	size: Vector2 = {60, 24},
 	disabled: bool = false,
+	color_override := COLOR_WHITE,
+	border_override := COLOR_BLACK,
 ) -> bool {
 	xform := transform_2d(position)
 	x_frame := 0
@@ -241,11 +243,31 @@ image_button :: proc(
 
 	uv := get_frame_uvs(.buttons, {x_frame, 0}, {60, 24})
 	shadow_uv := get_frame_uvs(.buttons, {4, 0}, {60, 24})
-	draw_quad_center_xform(xform * transform_2d({-5, -5}), size, .buttons, shadow_uv)
-	draw_quad_center_xform(xform * transform_2d(hover_position), size, .buttons, uv)
+	draw_quad_center_xform(
+		xform * transform_2d({-5, -5}),
+		size,
+		.buttons,
+		shadow_uv,
+		color_override,
+	)
+	draw_quad_center_xform(
+		xform * transform_2d(hover_position),
+		size,
+		.buttons,
+		uv,
+		color_override,
+	)
 
 
-	draw_text_outlined_center(transform_2d(position - {0, 8} + hover_position), text, font_size)
+	draw_text_outlined_center(
+		transform_2d(position - {0, 8} + hover_position),
+		text,
+		font_size,
+		0.0,
+		4.0,
+		color_override,
+		border_override,
+	)
 
 
 	return pressed

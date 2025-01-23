@@ -1,15 +1,15 @@
 package main
-import sapp "../sokol/app"
-import sg "../sokol/gfx"
-import sglue "../sokol/glue"
+import sapp "../vendor/sokol/app"
+import sg "../vendor/sokol/gfx"
+import sglue "../vendor/sokol/glue"
+import stbi "../vendor/stb-web/image"
+import stbrp "../vendor/stb-web/rect_pack"
+import stbtt "../vendor/stb-web/truetype"
 import "base:runtime"
-import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:strings"
-import stbi "vendor:stb/image"
-import stbrp "vendor:stb/rect_pack"
-import stbtt "vendor:stb/truetype"
+
 
 MAX_QUADS :: 8192
 
@@ -305,6 +305,8 @@ gfx_update :: proc() {
 }
 pixel_width: f32 = 320
 pixel_height: f32 = 180
+
+
 draw_frame_reset :: proc(frame: ^DrawFrame) {
 	using runtime, linalg
 
@@ -325,13 +327,18 @@ draw_frame_reset :: proc(frame: ^DrawFrame) {
 
 
 set_ortho_projection :: proc(zoom: f32) {
+	scale := f32(pixel_height) / f32(sapp.height())
+
+	w := f32(sapp.width()) * scale
+	h := f32(sapp.height()) * scale
+
 
 	using runtime, linalg
 	draw_frame.projection = matrix_ortho3d_f32(
-		pixel_width * -0.5 / zoom,
-		pixel_width * 0.5 / zoom,
-		pixel_height * -0.5 / zoom,
-		pixel_height * 0.5 / zoom,
+		w * -0.5 / zoom,
+		w * 0.5 / zoom,
+		h * -0.5 / zoom,
+		h * 0.5 / zoom,
 		-1,
 		1,
 	)
@@ -344,36 +351,42 @@ Alignment :: enum {
 }
 
 
+get_ui_width :: proc() -> f32 {
+	scale := f32(base_height) / f32(sapp.height())
+	w := f32(sapp.width()) * scale
+
+	return w
+}
+
+get_ui_height :: proc() -> f32 {
+	scale := f32(base_height) / f32(sapp.height())
+	h := f32(sapp.height()) * scale
+
+	return h
+}
+
+get_ui_dimensions :: proc() -> (f32, f32) {
+	scale := f32(base_height) / f32(sapp.height())
+
+	w := f32(sapp.width()) * scale
+	h := f32(sapp.height()) * scale
+
+	return w, h
+}
+
+
 set_ui_projection_alignment :: proc(alignment: Alignment) {
+
+	w, h := get_ui_dimensions()
+
 	using linalg
 	switch alignment {
 	case .bottom_left:
-		draw_frame.projection = matrix_ortho3d_f32(
-			0,
-			auto_cast sapp.width(),
-			0,
-			auto_cast sapp.height(),
-			-1,
-			1,
-		)
+		draw_frame.projection = matrix_ortho3d_f32(0, w, 0, h, -1, 1)
 	case .bottom_center:
-		draw_frame.projection = matrix_ortho3d_f32(
-			-(auto_cast sapp.width()) * 0.5,
-			auto_cast sapp.width() * 0.5,
-			0,
-			auto_cast sapp.height(),
-			-1,
-			1,
-		)
+		draw_frame.projection = matrix_ortho3d_f32(-w * 0.5, w * 0.5, 0, h, -1, 1)
 	case .center_center:
-		draw_frame.projection = matrix_ortho3d_f32(
-			-(auto_cast sapp.width()) * 0.5,
-			auto_cast sapp.width() * 0.5,
-			-(auto_cast sapp.height()) * 0.5,
-			auto_cast sapp.height() * 0.5,
-			-1,
-			1,
-		)
+		draw_frame.projection = matrix_ortho3d_f32(-w * 0.5, w * 0.5, -h * 0.5, h * 0.5, -1, 1)
 	}
 
 }

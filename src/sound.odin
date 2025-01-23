@@ -1,9 +1,8 @@
 package main
 
 
-import fcore "../fmod/core"
-import fsbank "../fmod/fsbank"
-import fstudio "../fmod/studio"
+import fcore "../vendor/fmod/core"
+import fstudio "../vendor/fmod/studio"
 import "core:fmt"
 
 

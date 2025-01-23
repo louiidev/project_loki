@@ -28,7 +28,7 @@ ProjectileTarget :: enum {
 }
 
 
-create_enemy_projectile :: proc(position: Vector2, rotation: f32, velocity: Vector2) {
+create_enemy_projectile :: proc(position: Vector2, rotation: f32, velocity: Vector2, damage: f32) {
 	projectile: Projectile
 	projectile.sprite_cell_start = {0, 0}
 	projectile.animation_count = 1
@@ -39,7 +39,7 @@ create_enemy_projectile :: proc(position: Vector2, rotation: f32, velocity: Vect
 	projectile.rotation = rotation
 	projectile.velocity = velocity
 	projectile.target = .PLAYER
-	projectile.damage_to_deal = 1
+	projectile.damage_to_deal = damage
 	projectile.scale = 1
 	append(&game_data.projectiles, projectile)
 }
@@ -57,16 +57,17 @@ create_player_projectile :: proc(
 	projectile.time_per_frame = 0.05
 	projectile.position = position
 	projectile.active = true
-	projectile.distance_limit = game_data.bullet_range
+	projectile.distance_limit = (game_data.bullet_range + game_data.weapon_bullet_range)
 	projectile.sprite_cell_start = {0, 1}
 	projectile.rotation = rotation
-	projectile.velocity = direction * game_data.bullet_velocity
+	projectile.velocity =
+		direction * (game_data.bullet_velocity + game_data.weapon_bullet_velocity)
 	projectile.target = .ENEMY
-	projectile.damage_to_deal = game_data.bullet_dmg
+	projectile.damage_to_deal = game_data.bullet_dmg + game_data.weapon_bullet_dmg
 	projectile.last_hit_ent_id = last_hit_id
 	projectile.hits = hits
 	projectile.bounce_count = bounce_count
-	projectile.scale = game_data.bullet_scale + 1.0
+	projectile.scale = (game_data.bullet_scale + game_data.weapon_bullet_scale) + 1.0
 	append(&game_data.projectiles, projectile)
 }
 
@@ -106,7 +107,8 @@ create_quintuple_projectiles_spikes :: proc(position: Vector2, target: Projectil
 		projectile.rotation = math.atan2(direction.y, direction.x)
 		projectile.velocity = linalg.normalize(direction) * 100
 		projectile.target = target
-		projectile.damage_to_deal = target == .ENEMY ? game_data.bullet_dmg : 10
+		projectile.damage_to_deal =
+			target == .ENEMY ? game_data.bullet_dmg + game_data.weapon_bullet_dmg : 10
 		projectile.last_hit_ent_id = 0
 		projectile.hits = 0
 		projectile.bounce_count = 0

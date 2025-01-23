@@ -4,23 +4,44 @@
 //------------------------------------------------------------------------------
 package main
 
-import sapp "../sokol/app"
-import sg "../sokol/gfx"
-import sglue "../sokol/glue"
-import slog "../sokol/log"
-import stime "../sokol/time"
+import sapp "../vendor/sokol/app"
+import sg "../vendor/sokol/gfx"
+import sglue "../vendor/sokol/glue"
+import slog "../vendor/sokol/log"
+// import stime "../sokol/time"
+
 import "base:runtime"
 import "core:fmt"
+import "core:log"
 import "core:math"
 import "core:math/ease"
 import "core:math/linalg"
 import "core:math/rand"
-import "core:strconv"
 import "core:strings"
-import t "core:time"
+
+import "time"
 
 
-log :: fmt.println
+DEBUG :: ODIN_DEBUG
+
+RELEASE :: !DEBUG
+
+// PLATFORM :: #config(PLATFORM, "undefined")
+
+DEMO :: #config(DEMO, true)
+
+WEB :: ODIN_ARCH == .wasm32
+
+// :config
+when DEBUG {
+	DEV :: true
+	TESTING :: false
+	PROFILE :: false
+} else {
+	DEV :: false
+	TESTING :: false
+	PROFILE :: false
+}
 
 
 GameRunState :: struct {
@@ -32,7 +53,8 @@ GameRunState :: struct {
 	permanence:                           [dynamic]Permanence,
 	popup_text:                           [dynamic]PopupText,
 	bombs:                                [dynamic]Bomb,
-	player:                               Entity,
+	blood:                                [dynamic]Blood,
+	player:                               Player,
 	pickups:                              [dynamic]Pickup,
 	enemy_spawn_timer:                    f32,
 	money:                                int,
@@ -47,8 +69,6 @@ GameRunState :: struct {
 	reroll_cost:                          int,
 
 	// upgrades
-	slowdown_multiplier:                  f32,
-	timer_to_show_upgrade:                f32,
 	next_upgrades:                        [3]ShopUpgrade,
 	player_upgrade:                       [Upgrade]int,
 	max_bullets:                          int,
@@ -66,27 +86,57 @@ GameRunState :: struct {
 	freeze_slowdown:                      f32,
 	poison_slowdown:                      f32,
 	bullet_freeze_chance:                 f32,
-	bullet_poision_chance:                f32,
+	bullet_poison_chance:                 f32,
 	chance_enemy_explodes:                f32,
 	chance_bomb_drop_reload:              f32,
 	chance_for_piercing_shot:             f32,
 	explosive_dmg:                        f32,
 	bullet_scale:                         f32,
+	fire_rate:                            f32,
+
+
+	// weapons
+	weapon_bullet_velocity:               f32,
+	weapon_max_bullets:                   int,
+	weapon_spread:                        f32,
+	weapon_bullet_dmg:                    f32,
+	weapon_time_to_reload:                f32,
+	weapon_bullet_scale:                  f32,
+	weapon_bullet_range:                  f32,
+	weapon_bullet_spread:                 f32,
+	weapon_fire_rate:                     f32,
+
+	// timers
+	in_transition_timer:                  f32,
+	out_transition_timer:                 f32,
+	knockback_radius_timer:               f32,
+	knockback_hold_timer:                 f32,
+	timer_to_show_upgrade:                f32,
+	slowdown_multiplier:                  f32,
+	shop_in_transition_time:              f32,
+	shop_out_transition_time:             f32,
 
 
 	// camera shake
 	camera_zoom:                          f32,
 	shake_amount:                         f32,
 	ui_state:                             GameUIState,
-	timers:                               [dynamic]Timer,
+	app_state:                            AppState,
 	world_time_elapsed:                   f32,
 	explosions:                           [dynamic]Explosion,
-	knockback_radius_timer:               f32,
-	knockback_hold_timer:                 f32,
 	knockback_position:                   Vector2,
 	// STATS
 	enemies_killed:                       u32,
 	money_earned:                         u32,
+	using ux_state:                       struct {
+		ux_alpha:      f32,
+		ux_anim_state: enum {
+			fade_in,
+			hold,
+			fade_out,
+		},
+		hold_end_time: f64,
+	},
 }
 
 
@@ -97,44 +147,50 @@ AnimationState :: enum {
 }
 
 
+Player :: struct {
+	using entity:       Entity,
+	just_fired_timer:   f32,
+	i_frame_timer:      f32,
+	current_speed:      f32,
+	roll_timer:         f32,
+	last_weapon_pickup: Weapon,
+}
+
+
 last_id: u32 = 0
 Entity :: struct {
-	using _:                  BaseEntity,
-	id:                       u32,
-	velocity:                 Vector2,
-	dodge_roll_cooldown:      f32,
-	speed:                    f32,
-	speed_while_shooting:     f32,
-	current_speed:            f32,
-	roll_speed:               f32,
-	health:                   f32,
-	max_health:               f32,
-	collision_radius:         f32,
-	knockback_timer:          f32,
-	knockback_direction:      Vector2,
-	knockback_velocity:       Vector2,
-	roll_timer:               f32,
-	max_roll_stamina:         f32,
-	attack_timer:             f32,
-	stun_timer:               f32,
-	current_animation_timer:  f32,
-	current_animation_frame:  int,
-	animation_state:          AnimationState,
-	weapon_cooldown_timer:    f32,
-	max_weapon_cooldown_time: f32,
-	i_frame_timer:            f32,
-	reload_timer:             f32,
-	scale_x:                  f32,
+	using _:                 BaseEntity,
+	id:                      u32,
+	velocity:                Vector2,
+	dodge_roll_cooldown:     f32,
+	speed:                   f32,
+	roll_speed:              f32,
+	health:                  f32,
+	max_health:              f32,
+	collision_radius:        f32,
+	knockback_timer:         f32,
+	knockback_direction:     Vector2,
+	knockback_velocity:      Vector2,
+	attack_timer:            f32,
+	stun_timer:              f32,
+	current_animation_timer: f32,
+	current_animation_frame: int,
+	animation_state:         AnimationState,
+	weapon_cooldown_timer:   f32,
+	reload_timer:            f32,
+	scale_x:                 f32,
 }
 
 
 AppState :: enum {
-	MainMenu,
-	GamePlay,
+	splash_logo,
+	splash_fmod,
+	main_menu,
+	game,
 }
 
 GameUIState :: enum {
-	none,
+	nil,
 	pause_menu,
 	upgrade_menu,
 	player_death,
@@ -173,13 +229,18 @@ PopupText :: struct {
 DEFAULT_POPUP_TXT: PopupText : {active = true, color = COLOR_WHITE, scale = 1.0}
 
 // UPGRADES INITIAL VALUES
+// REVOLVER
 PLAYER_INITIAL_BULLETS :: 6
 PLAYER_INITIAL_BULLET_RANGE: f32 : 100
 PLAYER_INITIAL_BULLET_SPREAD: f32 : 12.0
-PLAYER_INITIAL_RELOAD_TIME :: 1.0
-PLAYER_MIN_POSSIBLE_RELOAD_TIME :: 0.1
+PLAYER_INITIAL_RELOAD_TIME :: 1.4
+PLAYER_INITIAL_BULLET_DMG: f32 : 10
 PLAYER_INITIAL_BULLET_VELOCITY :: 500.0
 PLAYER_INITIAL_FIRE_RATE :: 0.2
+
+
+PLAYER_MIN_POSSIBLE_RELOAD_TIME :: 0.1
+
 PLAYER_INITIAL_PICKUP_RADIUS :: 30
 PLAYER_INITIAL_CRIT_CHANCE: f32 : 7.5
 PLAYER_MAX_CRIT_CHANCE: f32 : 75.5
@@ -192,13 +253,22 @@ PLAYER_ROLLDOWN_COOLDOWN :: 0.8
 PLAYER_DODGE_ROLL_PWR :: 180
 PLAYER_DODGE_ROLL_TIME :: 0.36
 PLAYER_DEFAULT_ORB_DMG: f32 : 3
-PLAYER_INITIAL_BULLET_DMG: f32 : 10
-PLAYER_INITIAL_POISION_DMG: f32 : 1.0
+
+PLAYER_INITIAL_poison_DMG: f32 : 1.0
 PLAYER_INITIAL_FREEZE_SLOWDOWN: f32 : 0.75
 INITIAL_EXPLOSIVE_DMG: f32 : 15
 INITIAL_FREEZE_SLOWDOWN: f32 : 0.75
 
 PLAYER_GUN_MOVE_DIST: f32 : 8.0
+
+
+MIN_ENEMIES_PER_SPAWN: int : 2
+MAX_ENEMIES_PER_SPAWN: int : 5
+
+MAX_EVER_ENEMIES_PER_SPAWN: int : 15
+
+WAVE_ENEMY_PER_SPAWN_MODIFIER: int : 1
+WAVE_ENEMY_HEALTH_MODIFIER: f32 : 2.5
 
 
 SPRITE_PIXEL_SIZE :: 16
@@ -220,14 +290,16 @@ ROLLING_ANIMATION_FRAMES :: 4
 PLAYER_I_FRAME_TIMEOUT_AMOUNT :: 0.5
 
 UPGRADE_TIMER_SHOW_TIME :: 0.9
-TIMER_TO_SHOW_DEATH_UI: f32 : 4.0
+TIMER_TO_SHOW_DEATH_UI: f32 : 2.0
 TIMER_TO_SHOW_DEATH_ANIMATION: f32 : 1.5
 INITIAL_STUN_TIME :: 0.5
 INITIAL_WAVE_TIME :: 30
+WAVE_TIME_MODIFIER: f32 : 0.5
 CAMERA_SHAKE_DECAY: f32 : 0.8
 SHAKE_POWER: f32 : 2.0
 SPAWN_INDICATOR_TIME: f32 : 0.90
-LEVEL_BOUNDS: Vector2 : {496, 270}
+LEVEL_BOUNDS: Vector2 : {465, 242}
+FENCE_SIZE: Vector2 : {496, 270}
 HALF_BOUNDS: Vector2 : {LEVEL_BOUNDS.x * 0.5, LEVEL_BOUNDS.y * 0.5}
 
 WALLS: [4]Vector4 : {
@@ -241,22 +313,32 @@ DEBUG_NO_ENEMIES :: false
 
 
 DEFAULT_ENT :: Entity {
-	active                   = true,
-	speed                    = PLAYER_WALK_SPEED,
-	speed_while_shooting     = PLAYER_WALK_SHOOTING_SPEED,
-	current_speed            = PLAYER_WALK_SPEED,
-	roll_speed               = PLAYER_ROLL_SPEED,
-	max_weapon_cooldown_time = PLAYER_INITIAL_FIRE_RATE,
-	collision_radius         = 4,
+	active           = true,
+	speed            = PLAYER_WALK_SPEED,
+	roll_speed       = PLAYER_ROLL_SPEED,
+	collision_radius = 4,
 }
 
 
+PLAYER :: Player {
+	current_speed = PLAYER_WALK_SPEED,
+}
+
+Blood :: struct {
+	using _:          BaseEntity,
+	size:             f32,
+	current_lifetime: f32,
+	max_lifetime:     f32,
+	velocity:         Vector2,
+	ground_y:         f32,
+	color:            Vector4,
+}
+
 Explosion :: struct {
+	using _:          BaseEntity,
 	current_lifetime: f32,
 	max_lifetime:     f32,
 	size:             f32,
-	position:         Vector2,
-	active:           bool,
 }
 
 
@@ -264,6 +346,10 @@ PickupType :: enum {
 	Money,
 	Health,
 	Ammo,
+	Shotgun,
+	SMG,
+	Sniper,
+	MachineGun,
 }
 
 MONEY_ANIM_FRAMES :: 8
@@ -281,14 +367,13 @@ Pickup :: struct {
 
 
 game_data: GameRunState
-app_state: AppState = .MainMenu
+
 
 camera: Camera
 
 
 restart_run :: proc() {
 	// eventually Ill put in a fade out
-
 	reset_scene()
 
 
@@ -298,24 +383,29 @@ restart_run :: proc() {
 
 setup_run :: proc() {
 	game_data = {}
-	game_data.player = create_entity(20)
+	game_data.app_state = .game
+	game_data.player = create_default_player(20)
 	game_data.current_bullets_count = PLAYER_INITIAL_BULLETS
-	game_data.max_bullets = PLAYER_INITIAL_BULLETS
-	game_data.bullet_range = PLAYER_INITIAL_BULLET_RANGE
+	game_data.crit_chance = PLAYER_INITIAL_CRIT_CHANCE
+	game_data.orb_damage_per_hit = PLAYER_DEFAULT_ORB_DMG
+
 	game_data.current_wave = 1
 	game_data.reroll_cost = INITIAL_REROLL_COST
 	game_data.time_left_in_wave = INITIAL_WAVE_TIME
 	game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
 	game_data.money_pickup_radius = PLAYER_INITIAL_PICKUP_RADIUS
-	game_data.bullet_velocity = PLAYER_INITIAL_BULLET_VELOCITY
-	game_data.bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
-	game_data.time_to_reload = PLAYER_INITIAL_RELOAD_TIME
-	game_data.crit_chance = PLAYER_INITIAL_CRIT_CHANCE
-	game_data.orb_damage_per_hit = PLAYER_DEFAULT_ORB_DMG
-	game_data.bullet_dmg = PLAYER_INITIAL_BULLET_DMG
+	// weapon stuff
+	game_data.weapon_bullet_velocity = PLAYER_INITIAL_BULLET_VELOCITY
+	game_data.weapon_bullet_spread = PLAYER_INITIAL_BULLET_SPREAD
+	game_data.weapon_time_to_reload = PLAYER_INITIAL_RELOAD_TIME
+	game_data.weapon_max_bullets = PLAYER_INITIAL_BULLETS
+	game_data.weapon_bullet_range = PLAYER_INITIAL_BULLET_RANGE
+	game_data.weapon_bullet_dmg = PLAYER_INITIAL_BULLET_DMG
+	game_data.weapon_fire_rate = PLAYER_INITIAL_FIRE_RATE
+
 	game_data.camera_zoom = 1.0
 	game_data.enemy_stun_time = INITIAL_STUN_TIME
-	game_data.poison_dmg = PLAYER_INITIAL_POISION_DMG
+	game_data.poison_dmg = PLAYER_INITIAL_poison_DMG
 	game_data.explosive_dmg = INITIAL_EXPLOSIVE_DMG
 	game_data.freeze_slowdown = INITIAL_FREEZE_SLOWDOWN
 
@@ -324,7 +414,7 @@ setup_run :: proc() {
 }
 
 
-generate_new_shop_upgrades :: proc() {
+generate_new_shop_upgrades :: proc(last_upgrades: []ShopUpgrade) {
 
 	upgrades_bag: [dynamic]Upgrade
 	defer delete(upgrades_bag)
@@ -332,7 +422,17 @@ generate_new_shop_upgrades :: proc() {
 	probabilities := get_upgrade_shop_probabilities()
 
 	for upgrade in Upgrade {
+		skip := false
+		for l_upgrade in last_upgrades {
+			if l_upgrade.upgrade == upgrade {
+				skip = true
+				break
+			}
 
+		}
+		if skip {
+			continue
+		}
 		prob := int(probabilities[upgrade] * 1000)
 		for i := 0; i < prob; i += 1 {
 			append(&upgrades_bag, upgrade)
@@ -385,17 +485,26 @@ init :: proc "c" () {
 	secondary_color = hex_to_rgb(0xa07cff)
 	background_color = hex_to_rgb(0xbf704d)
 	clear_color = vec_to_color(background_color)
-	stime.setup()
+	// stime.setup()
 	gfx_init()
 	init_images()
 	init_sound()
 	setup_run()
+	init_time = time.now()
+	sapp.toggle_fullscreen()
+
+	when (!DEBUG || !TESTING) && !DEV {
+		game_data.app_state = .splash_logo
+	} else {
+		game_data.app_state = .game
+		// ux_mode = .splash_logo
+	}
+
 
 }
 
 
 paused := false
-can_player_move := true
 last_time: u64 = 0
 mouse_world_position: Vector2
 
@@ -470,13 +579,13 @@ damage_player :: proc(damage_amount: f32, dmg_type: DamageType) {
 		player.i_frame_timer = PLAYER_I_FRAME_TIMEOUT_AMOUNT
 		play_sound("event:/hit")
 		if player.health <= 0 {
+			game_data.timer_to_show_player_death_animation = TIMER_TO_SHOW_DEATH_ANIMATION
 			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_UI
-			game_data.timer_to_show_player_death_ui = TIMER_TO_SHOW_DEATH_ANIMATION
 		}
-	}
+		if dmg_type == .physical {
+			knockback_enemies_in_radius(&player, 30)
+		}
 
-	if dmg_type == .physical {
-		knockback_enemies_in_radius(&player, 30)
 	}
 
 
@@ -547,21 +656,29 @@ update_player_animations :: proc(ent: ^Entity, dt: f32) {
 	}
 }
 
+
+update_player_timers :: proc(ent: ^Player, dt: f32) {
+	update_entity_timers(ent, dt)
+	ent.i_frame_timer = math.max(0.0, ent.i_frame_timer - dt)
+}
+
 update_entity_timers :: proc(ent: ^Entity, dt: f32) {
 	ent.attack_timer = math.max(0.0, ent.attack_timer - dt)
 	ent.knockback_timer = math.max(0.0, ent.knockback_timer - dt)
 	ent.stun_timer = math.max(0.0, ent.stun_timer - dt)
 	ent.weapon_cooldown_timer = math.max(0.0, ent.weapon_cooldown_timer - dt)
-	ent.i_frame_timer = math.max(0.0, ent.i_frame_timer - dt)
 	ent.reload_timer = math.max(0.0, ent.reload_timer - dt)
 	ent.current_animation_timer += dt
 	ent.dodge_roll_cooldown = math.max(0.0, ent.dodge_roll_cooldown - dt)
 }
 
-create_entity :: proc(health: f32, position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
-	entity := DEFAULT_ENT
-	last_id += 1
-	entity.id = last_id
+create_default_player :: proc(
+	health: f32,
+	position: Vector2 = V2_ZERO,
+	speed: f32 = 20,
+) -> Player {
+	entity: Player = PLAYER
+	entity.entity = DEFAULT_ENT
 	entity.health = health
 	entity.max_health = health
 	entity.position = position
@@ -673,45 +790,56 @@ cleanup_scene :: proc() {
 reset_scene :: proc() {
 	for &e in game_data.enemies {
 		e.active = false
-		spawn_particles(e.position)
+
 	}
-	for &xp in game_data.pickups {
-		xp.active = false
+	for &pickup in game_data.pickups {
+		pickup.active = false
 	}
 	for &p in game_data.projectiles {
 		p.active = false
 
-		spawn_particles(p.position)
 	}
 
 	for &p in game_data.environment_prop {
 		p.active = false
 		spawn_particles(p.position)
 	}
+
+	for &popup in game_data.popup_text {
+		popup.active = false
+	}
 }
 
 
 game_play :: proc() {
-	dt: f32 = auto_cast stime.sec(stime.laptime(&last_time))
+
+
+	dt: f32 = get_delta_time()
+	app_dt: f32 = get_delta_time()
 	ticks_per_second = u64(1.0 / dt)
 	ticks_per_second = clamp(ticks_per_second, 60, 240)
 	defer game_data.ticks += 1
-	app_dt: f32 = dt
+
 	defer game_data.world_time_elapsed += app_dt
 
-	particle_dt: f32 = dt
-
-
-	if game_data.ui_state != .none {
-		dt = 0.0
-	}
+	particle_dt: f32 = get_delta_time()
 
 	if inputs.button_just_pressed[sapp.Keycode.ESCAPE] {
 		if game_data.ui_state == .pause_menu {
-			game_data.ui_state = .none
-		} else if game_data.ui_state == .none {
+			game_data.ui_state = nil
+		} else if game_data.ui_state == nil {
 			game_data.ui_state = .pause_menu
 		}
+	}
+
+
+	game_play_paused :=
+		game_data.ui_state != nil ||
+		game_data.in_transition_timer > 0 ||
+		game_data.out_transition_timer > 0
+
+	if game_play_paused {
+		dt = 0.0
 	}
 
 
@@ -737,22 +865,23 @@ game_play :: proc() {
 		}
 
 		if game_data.timer_to_show_player_death_animation <= 0 {
-
-			game_data.player.active = false
-			spawn_particles(game_data.player.position)
-			game_data.timer_to_show_player_death_animation =
-				TIMER_TO_SHOW_DEATH_ANIMATION + TIMER_TO_SHOW_DEATH_UI
+			log.info(game_data.timer_to_show_player_death_ui)
+			if game_data.player.active {
+				game_data.player.active = false
+				spawn_particles(game_data.player.position)
+			}
 		}
 	}
 
-	if game_data.time_left_in_wave <= 0 && game_data.ui_state == .none {
+	if game_data.time_left_in_wave <= 0 && game_data.ui_state == nil {
 		dt = math.lerp(dt, 0.0, 1 - game_data.timer_to_show_upgrade / UPGRADE_TIMER_SHOW_TIME)
 
 		game_data.timer_to_show_upgrade = math.max(game_data.timer_to_show_upgrade - app_dt, 0.0)
 		if game_data.timer_to_show_upgrade <= 0 {
 			game_data.timer_to_show_upgrade = UPGRADE_TIMER_SHOW_TIME
 			game_data.ui_state = .upgrade_menu
-			generate_new_shop_upgrades()
+			game_data.shop_in_transition_time = 0
+			generate_new_shop_upgrades(nil)
 			cleanup_scene()
 		}
 
@@ -765,17 +894,22 @@ game_play :: proc() {
 			ENEMY_SPAWN_TIMER_MAX,
 		)
 
+		min := MIN_ENEMIES_PER_SPAWN
+		max := math.min(
+			(MAX_ENEMIES_PER_SPAWN - min) + WAVE_ENEMY_PER_SPAWN_MODIFIER * game_data.current_wave,
+			MAX_EVER_ENEMIES_PER_SPAWN,
+		)
+
 
 		if game_data.time_left_in_wave > SPAWN_INDICATOR_TIME + 0.5 {
-			amount_to_spawn: int = rand.int_max(4) + 1
+			amount_to_spawn: int = rand.int_max(max) + MIN_ENEMIES_PER_SPAWN
 			spawn_enemy_group(amount_to_spawn)
 		}
 
 
 	}
 
-	if game_data.player.active && can_player_move {
-
+	if game_data.player.active && !game_play_paused {
 
 		dist := linalg.distance(mouse_world_position, game_data.player.position)
 
@@ -797,7 +931,7 @@ game_play :: proc() {
 
 		}
 
-		if game_data.ui_state == .none {
+		if game_data.ui_state == nil {
 			game_data.shake_amount = math.max(game_data.shake_amount - CAMERA_SHAKE_DECAY * dt, 0)
 			amount := math.pow(game_data.shake_amount, SHAKE_POWER)
 			// rotation = max_roll * amount * rand_range(-1, 1)
@@ -859,7 +993,11 @@ game_play :: proc() {
 
 	{
 		// LEVEL BOUNDS
-		draw_quad_center_xform(Matrix4(1), LEVEL_BOUNDS, .level_bounds)
+		draw_quad_center_xform(Matrix4(1), FENCE_SIZE, .level_bounds)
+	}
+
+	{
+		// update_render_blood(dt)
 	}
 
 	{
@@ -912,7 +1050,7 @@ game_play :: proc() {
 		}
 	}
 
-	if game_data.ui_state == .none {
+	if !game_play_paused {
 		// XP pickups
 		for &pickup in &game_data.pickups {
 			if !pickup.picked_up &&
@@ -922,23 +1060,23 @@ game_play :: proc() {
 				   game_data.player.position,
 				   game_data.player.collision_radius,
 			   ) {
-				log(pickup.amount)
-				if pickup.type == .Money {
-					// xp.active = false
+
+				#partial switch (pickup.type) {
+				case .Money:
 					game_data.money += pickup.amount
 					game_data.money_earned += auto_cast pickup.amount
-				} else if pickup.type == .Health {
+				case .Ammo:
+					game_data.current_bullets_count += pickup.amount
+				case .Health:
 					game_data.player.health = math.min(
 						f32(pickup.amount) + game_data.player.health,
 						game_data.player.max_health,
 					)
-				} else if pickup.type == .Ammo {
-					game_data.current_bullets_count += pickup.amount
+
 				}
+
 				pickup.picked_up = true
-
 				pickup.start_pos = pickup.position
-
 
 			}
 			pickup.current_animation_timer += dt
@@ -976,13 +1114,32 @@ game_play :: proc() {
 				if linalg.distance(pickup.position, game_data.player.position) <= 4 {
 					pickup.active = false
 					popup_txt: PopupText = DEFAULT_POPUP_TXT
-					if pickup.type == .Money {
+					switch (pickup.type) {
+					case .Money:
 						popup_txt.text = fmt.tprintf("$%d", pickup.amount)
 						popup_txt.color = hex_to_rgb(0xffd569)
-					} else {
-						popup_txt.text = fmt.tprintf("+%d", pickup.amount)
-						popup_txt.color =
-							pickup.type == .Health ? hex_to_rgb(0xe84444) : hex_to_rgb(0xffd569)
+					case .Ammo:
+						popup_txt.text = fmt.tprintf("Ammo +%d", pickup.amount)
+						popup_txt.color = hex_to_rgb(0xffd569)
+					case .Health:
+						popup_txt.text = fmt.tprintf("Health +%d", pickup.amount)
+						popup_txt.color = hex_to_rgb(0xe84444)
+					case .Shotgun:
+						popup_txt.text = "+Shotgun"
+						popup_txt.color = COLOR_WHITE
+						add_shotgun_to_player()
+					case .SMG:
+						popup_txt.text = "+SMG"
+						popup_txt.color = COLOR_WHITE
+						add_smg_to_player()
+					case .MachineGun:
+						popup_txt.text = "+Machine Gun"
+						popup_txt.color = COLOR_WHITE
+						add_machine_gun_to_player()
+					case .Sniper:
+						popup_txt.text = "+Sniper"
+						popup_txt.color = COLOR_WHITE
+						add_sniper_to_player()
 					}
 
 
@@ -995,12 +1152,24 @@ game_play :: proc() {
 			draw_pos.y += sine_breathe_alpha(game_data.world_time_elapsed * 0.5) * 6
 			xform := translate_mat4({draw_pos.x, draw_pos.y, 0.0})
 
-			uvs := get_frame_uvs(
-				.money,
-				{pickup.current_animation_frame, auto_cast pickup.type},
-				{16, 16},
-			)
-			draw_quad_center_xform(xform, {12, 12}, .money, uvs, COLOR_WHITE)
+			switch (pickup.type) {
+			case .Money, .Ammo, .Health:
+				uvs := get_frame_uvs(
+					.money,
+					{pickup.current_animation_frame, auto_cast pickup.type},
+					{16, 16},
+				)
+				draw_quad_center_xform(xform, {12, 12}, .money, uvs, COLOR_WHITE)
+			case .Shotgun, .SMG, .MachineGun, .Sniper:
+				uvs := get_frame_uvs(
+					.weapons,
+					{auto_cast pickup_to_weapon_enum(pickup.type), 0},
+					{24, 24},
+				)
+				draw_quad_center_xform(xform, {24, 24}, .money, uvs, COLOR_WHITE)
+			}
+
+
 		}
 	}
 
@@ -1011,8 +1180,6 @@ game_play :: proc() {
 		// PLAYER LOGIC
 		using game_data
 
-
-		allow_ingame_user_input := game_data.ui_state == .none && player.active
 
 		// if can_player_move {
 		x := f32(int(inputs.button_down[D]) - int(inputs.button_down[A]))
@@ -1030,13 +1197,13 @@ game_play :: proc() {
 			set_ent_animation_state(&player, .IDLE)
 		}
 
-		update_entity_timers(&player, dt)
+		update_player_timers(&player, dt)
 		update_player_animations(&player, dt)
 
 
 		speed := player.speed
 
-		if allow_ingame_user_input && inputs.button_just_pressed[Keycode.SPACE] {
+		if !game_play_paused && inputs.button_just_pressed[Keycode.SPACE] {
 			if player.dodge_roll_cooldown <= 0 && player.animation_state != .ROLLING {
 				direction: Vector2 = player_input != V2_ZERO ? player_input : {1, 0}
 				player.velocity = direction * PLAYER_DODGE_ROLL_PWR
@@ -1072,29 +1239,21 @@ game_play :: proc() {
 		delta_y := PLAYER_GUN_MOVE_DIST * math.sin(-rotation_z)
 		attack_position: Vector2 = player.position + {delta_x, -delta_y}
 
-		if inputs.mouse_down[Mousebutton.LEFT] || player.weapon_cooldown_timer > 0 {
-			player.current_speed = math.max(
-				player.speed_while_shooting,
-				player.current_speed - PLAYER_SPEED_REDUCATION_PER_FRAME * dt,
-			)
-		} else {
-			player.current_speed = math.min(
-				player.speed,
-				player.current_speed + PLAYER_SPEED_ADDITION_PER_FRAME * dt,
-			)
-		}
 
 		if game_data.current_bullets_count == 0 {
 			if player.reload_timer <= 0 {
-				game_data.current_bullets_count = game_data.max_bullets
+				game_data.current_bullets_count =
+					game_data.max_bullets + game_data.weapon_max_bullets
 			}
 		}
-
-		if allow_ingame_user_input &&
+		JUST_FIRED_TIME: f32 : 0.15
+		game_data.player.just_fired_timer -= dt
+		if !game_play_paused &&
 		   inputs.mouse_down[Mousebutton.LEFT] &&
 		   player.weapon_cooldown_timer <= 0 &&
 		   game_data.current_bullets_count > 0 &&
 		   player.reload_timer <= 0 {
+			game_data.player.just_fired_timer = JUST_FIRED_TIME
 
 			if game_data.player_upgrade[.BULLETS] == 0 {
 				game_data.player_upgrade[.BULLETS] = 1
@@ -1103,10 +1262,13 @@ game_play :: proc() {
 			points, angles := generate_points_rotation_around_circle(
 				3,
 				game_data.player_upgrade[.BULLETS],
-				game_data.bullet_spread * auto_cast game_data.player_upgrade[.BULLETS],
+				(game_data.bullet_spread + game_data.bullet_spread) *
+				auto_cast game_data.player_upgrade[.BULLETS],
 			)
 
-			spread := game_data.bullet_spread + auto_cast game_data.player_upgrade[.BULLETS]
+			spread :=
+				(game_data.bullet_spread + game_data.bullet_spread) +
+				auto_cast game_data.player_upgrade[.BULLETS]
 			camera_shake(0.45)
 			play_sound("event:/gunshot")
 			for i := 0; i < game_data.player_upgrade[.BULLETS]; i += 1 {
@@ -1130,7 +1292,7 @@ game_play :: proc() {
 
 			if game_data.current_bullets_count <= 0 {
 				play_sound("event:/reload")
-				player.reload_timer = game_data.time_to_reload
+				player.reload_timer = (game_data.time_to_reload + game_data.weapon_time_to_reload)
 
 				if should_spawn_upgrade(.BOMB_DROP_RELOAD) {
 					bomb: Bomb
@@ -1147,7 +1309,7 @@ game_play :: proc() {
 				set_ent_animation_state(&player, .WALKING)
 			}
 
-			player.weapon_cooldown_timer = player.max_weapon_cooldown_time
+			player.weapon_cooldown_timer = game_data.weapon_fire_rate + game_data.fire_rate
 			delete(points)
 			delete(angles)
 		}
@@ -1184,7 +1346,6 @@ game_play :: proc() {
 			player.velocity = V2_ZERO
 		}
 
-
 		if player.roll_timer > 0 {
 			player.position = player.position + player.velocity * dt
 		} else {
@@ -1201,8 +1362,12 @@ game_play :: proc() {
 			flash_amount = 1
 		}
 
+		if player.health <= 0 {
+			uvs = get_frame_uvs(.player, {0, 3}, {18, 18})
+		}
 
-		if player.active {
+
+		if player.active || player.health <= 0 {
 
 			flip_x := mouse_world_position.x < game_data.player.position.x
 
@@ -1219,7 +1384,8 @@ game_play :: proc() {
 			weapon_rotation_angle := calc_rotation_to_target(mouse_world_position, player.position)
 
 
-			xform = transform_2d(game_data.player.position)
+			xform = transform_2d(player.position)
+
 
 			if flip_x {
 				xform *= linalg.matrix4_scale_f32({-1, 1, 1})
@@ -1233,8 +1399,37 @@ game_play :: proc() {
 				linalg.matrix4_rotate(weapon_rotation_angle, Vector3{0, 0, 1}) *
 				linalg.matrix4_translate_f32({-5, -12, 0.0})
 
-			weapon_uvs := get_frame_uvs(.weapons, {1, 0}, {24, 24})
-			draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
+			if player.just_fired_timer > 0 {
+				v := ease_over_time(player.just_fired_timer, JUST_FIRED_TIME, .Cubic_Out, 0, -5)
+				scale_x := ease_over_time(
+					player.just_fired_timer,
+					JUST_FIRED_TIME,
+					.Cubic_Out,
+					1,
+					0.85,
+				)
+
+				scale_y := ease_over_time(
+					player.just_fired_timer,
+					JUST_FIRED_TIME,
+					.Cubic_Out,
+					1,
+					1.3,
+				)
+
+				xform *= transform_2d({v, 0}, 0, {scale_x, scale_y})
+			}
+
+
+			weapon_uvs := get_frame_uvs(
+				.weapons,
+				{auto_cast player.last_weapon_pickup, 0},
+				{24, 24},
+			)
+
+			if player.health > 0 {
+				draw_quad_xform(xform, {auto_cast 24, auto_cast 24}, .weapons, weapon_uvs)
+			}
 
 			if game_data.current_bullets_count == 0 && player.reload_timer > 0 {
 				// line
@@ -1265,7 +1460,10 @@ game_play :: proc() {
 				)
 
 
-				t_normalized := 1.0 - (player.reload_timer / game_data.time_to_reload)
+				t_normalized :=
+					1.0 -
+					(player.reload_timer /
+							(game_data.time_to_reload + game_data.weapon_time_to_reload))
 				min: f32 = -6.3
 				max: f32 = 6.3
 				x: f32 = math.lerp(min, max, t_normalized)
@@ -1285,7 +1483,7 @@ game_play :: proc() {
 		// ORBS
 		if game_data.player_upgrade[.ROTATING_ORB] > 0 && game_data.player.active {
 			radius: f32 = 20
-			speed: f32 = 0.25
+			speed: f32 = 25
 			points, angles := generate_points_rotation_around_circle(
 				radius,
 				game_data.player_upgrade[.ROTATING_ORB],
@@ -1296,7 +1494,7 @@ game_play :: proc() {
 
 			for i := 0; i < len(points); i += 1 {
 				starting_angle: f32 = angles[i]
-				angle: f32 = math.to_radians(f32(game_data.ticks) * speed) + starting_angle
+				angle: f32 = math.to_radians(f32(game_data.ticks) * speed * dt) + starting_angle
 				orb_position := Vector2{radius * math.cos(angle), radius * math.sin(angle)}
 				circle_radius: f32 = 6
 				if run_every_seconds(1.0) {
@@ -1318,7 +1516,12 @@ game_play :: proc() {
 							e.position,
 							e.collision_radius,
 						) {
-
+							create_blood_particle(
+								&e,
+								linalg.normalize(
+									e.position - game_data.player.position + orb_position,
+								),
+							)
 							damage_enemy(
 								&e,
 								game_data.orb_damage_per_hit,
@@ -1334,7 +1537,7 @@ game_play :: proc() {
 				draw_quad_xform(
 					transform_2d(game_data.player.position + orb_position),
 					{circle_radius, circle_radius},
-					.circle,
+					.orb,
 					uvs,
 					hex_to_rgb(0x9bf0fd),
 				)
@@ -1389,16 +1592,16 @@ game_play :: proc() {
 		// @enemies
 		for &enemy in game_data.enemies {
 			if enemy.health <= 0 {
-				r_n := rand.int_max(10)
+				r_n := rand.int_max(20)
 
 
-				if r_n <= 8 {
+				if r_n <= 13 {
 					amount := 1
 					type: PickupType = .Health
-					if r_n <= 3 {
-						amount = rand.int_max(8) + 1
+					if r_n <= 11 {
+						amount = rand.int_max(5) + 1
 						type = .Money
-					} else if r_n <= 6 {
+					} else if r_n <= 12 {
 						amount = rand.int_max(6) + 1
 						type = .Ammo
 					} else {
@@ -1411,6 +1614,19 @@ game_play :: proc() {
 					mp.picked_up = false
 					mp.type = type
 					mp.amount = amount
+					append(&game_data.pickups, mp)
+				} else if r_n <= 14 {
+					type: PickupType = weapon_to_pickup_enum(
+						auto_cast (1 + rand.int_max(len(Weapon) - 1)),
+					)
+
+
+					mp: Pickup
+					mp.position = enemy.position
+					mp.active = true
+					mp.picked_up = false
+					mp.amount = 0
+					mp.type = type
 					append(&game_data.pickups, mp)
 				}
 
@@ -1459,8 +1675,9 @@ game_play :: proc() {
 				enemy.flip_x = enemy.position.x < game_data.player.position.x
 			}
 
-
-			enemy_update(&enemy, dt)
+			if !game_play_paused && game_data.player.active {
+				enemy_update(&enemy, dt)
+			}
 
 
 			flash_amount: f32 = 0
@@ -1559,7 +1776,9 @@ game_play :: proc() {
 			} else if enemy.statuses[.Frozen] {
 				color = hex_to_rgb(0x9bf0fd)
 			}
-
+			if enemy.type == .DISK {
+				xform = transform_2d(enemy.position, enemy.rotation)
+			}
 			draw_quad_center_xform(xform, {18, 18}, .enemies, uvs, color, flash_amount)
 
 
@@ -1690,6 +1909,8 @@ game_play :: proc() {
 							p.last_hit_ent_id = e.id
 						}
 
+						// create_blood_particle(&e, linalg.normalize(p.velocity))
+
 
 						damage_enemy(&e, p.damage_to_deal, p.velocity)
 
@@ -1697,15 +1918,16 @@ game_play :: proc() {
 							e.statuses[.Frozen] = true
 						}
 
-						if should_spawn_upgrade(.BULLETS_CAUSE_POISION) {
+						if should_spawn_upgrade(.BULLETS_CAUSE_POISON) {
 							e.statuses[.Poison] = true
+						}
+						if p.target == .ENEMY {
+							create_bullet_death(&p)
+						} else {
+							spawn_particles(p.position, hex_to_rgb(0xf85a5a))
 						}
 
 
-						spawn_particles(
-							p.position,
-							p.target == .ENEMY ? hex_to_rgb(0xffed73) : hex_to_rgb(0xf85a5a),
-						)
 						if e.health <= 0 {
 							spawn_particles(e.position, COLOR_WHITE)
 
@@ -1727,7 +1949,7 @@ game_play :: proc() {
 				// PLAYER dmg
 
 				p.active = false
-				damage_player(1, .projectile)
+				damage_player(p.damage_to_deal, .projectile)
 			}
 
 			for &prop in game_data.environment_prop {
@@ -1737,6 +1959,9 @@ game_play :: proc() {
 				}
 
 				if prop.active && circles_overlap(p.position, 5, prop.position, 5) {
+					if p.target == .ENEMY {
+						create_bullet_death(&p)
+					}
 					if prop.type == .cactus {
 						create_quintuple_projectiles(prop.position, .ALL)
 
@@ -1874,8 +2099,9 @@ game_play :: proc() {
 	{
 		// Base UI
 		set_ui_projection_alignment(.bottom_left)
+		_, height := get_ui_dimensions()
 		using game_data
-		base_pos_y := 0.9 * f32(sapp.height())
+		base_pos_y := 0.9 * height
 		padding: f32 = 8
 		draw_quad_xform(
 			transform_2d({10, base_pos_y}),
@@ -1911,7 +2137,11 @@ game_play :: proc() {
 
 		draw_text_outlined(
 			transform_2d({50, base_pos_y - (64 + padding) * 2}),
-			fmt.tprintf("Ammo: %d/%d", game_data.current_bullets_count, game_data.max_bullets),
+			fmt.tprintf(
+				"Ammo: %d/%d",
+				game_data.current_bullets_count,
+				game_data.max_bullets + game_data.weapon_max_bullets,
+			),
 			32,
 		)
 
@@ -1919,28 +2149,71 @@ game_play :: proc() {
 
 
 	{
-		set_ui_projection_alignment(.bottom_center)
-		using sapp
+		{
+			set_ui_projection_alignment(.bottom_center)
+			using sapp
+			_, w_height := get_ui_dimensions()
 
-		draw_text_outlined_center(
-			transform_2d({0, f32(sapp.height()) - 100}),
-			fmt.tprintf("Wave %d", game_data.current_wave),
-			30,
-			4.0,
-		)
-		draw_text_outlined_center(
-			transform_2d({0, f32(sapp.height()) - 145}),
-			fmt.tprintf("Time left %.0f", game_data.time_left_in_wave),
-			30,
-			4.0,
-		)
+			draw_text_outlined_center(
+				transform_2d({0, w_height - 100}),
+				fmt.tprintf("Wave %d", game_data.current_wave),
+				30,
+				4.0,
+			)
+			draw_text_outlined_center(
+				transform_2d({0, w_height - 145}),
+				fmt.tprintf("Time left %.0f", game_data.time_left_in_wave),
+				30,
+				4.0,
+			)
+		}
+
 
 		set_ui_projection_alignment(.center_center)
+		w_width, w_height := get_ui_dimensions()
 		mouse_world_position = mouse_to_matrix()
 		// UPGRADE MENU
+		SHOP_TRANS_TIME: f32 : 1.0
 
 		if game_data.ui_state == .upgrade_menu {
+			game_data.shop_in_transition_time += app_dt
 
+			offset_y := ease_over_time(
+				game_data.shop_in_transition_time,
+				SHOP_TRANS_TIME,
+				.Bounce_Out,
+				auto_cast -w_height,
+				0,
+			)
+
+			if game_data.shop_in_transition_time >= SHOP_TRANS_TIME {
+				offset_y = 0
+
+				if game_data.shop_out_transition_time > 0 {
+					game_data.shop_out_transition_time -= app_dt
+					if game_data.shop_out_transition_time <= 0 {
+						game_data.ui_state = nil
+					}
+					offset_y = ease_over_time(
+						game_data.shop_out_transition_time,
+						SHOP_TRANS_TIME,
+						.Quartic_Out,
+						auto_cast -w_height,
+						0,
+					)
+				}
+			}
+
+			draw_frame.camera_xform = translate_mat4(Vector3{0, -offset_y, 0})
+
+			draw_rect_center_xform(transform_2d({0, 0}), {w_width, w_height}, {0, 0, 0, 0.3})
+
+			upgrade_sign_size := Vector2{184, 84} * 2.5
+			draw_quad_xform(
+				transform_2d({-upgrade_sign_size.x * 0.5, (w_height * 0.5) - upgrade_sign_size.y}),
+				upgrade_sign_size,
+				.upgrade_sign,
+			)
 
 			box_width: f32 = 250
 			box_height: f32 = 350
@@ -1956,6 +2229,9 @@ game_play :: proc() {
 			card_disalbed_uv := get_frame_uvs(.card, {1, 0}, card_size / 5)
 			card_shadow_uv := get_frame_uvs(.card, {2, 0}, card_size / 5)
 
+
+			allow_inputs := offset_y == 0
+
 			for i := 0; i < len(game_data.next_upgrades); i += 1 {
 				shadow_size := card_size
 				hover := false
@@ -1964,7 +2240,8 @@ game_play :: proc() {
 
 				disabled :=
 					game_data.next_upgrades[i].purchased ||
-					game_data.next_upgrades[i].cost > game_data.money
+					game_data.next_upgrades[i].cost > game_data.money ||
+					!allow_inputs
 
 				if !disabled && aabb_contains(position, card_size, mouse_world_position) {
 					ui_state.hover_id = id
@@ -2098,7 +2375,7 @@ game_play :: proc() {
 				game_data.reroll_cost > game_data.money,
 			) {
 				game_data.money -= game_data.reroll_cost
-				generate_new_shop_upgrades()
+				generate_new_shop_upgrades(game_data.next_upgrades[:])
 				game_data.reroll_cost += REROLL_COST_MODIFIER
 			}
 			if image_button(
@@ -2111,16 +2388,14 @@ game_play :: proc() {
 				20,
 				{button_width, button_height},
 			) {
+				game_data.shop_out_transition_time = SHOP_TRANS_TIME
 				game_data.current_wave += 1
-				game_data.time_left_in_wave = INITIAL_WAVE_TIME + 10
-				game_data.ui_state = .none
+				game_data.time_left_in_wave =
+					INITIAL_WAVE_TIME + WAVE_TIME_MODIFIER * auto_cast game_data.current_wave
 				game_data.reroll_cost = INITIAL_REROLL_COST
-				log("bullet speed", game_data.bullet_spread)
-				log("player speed", game_data.player.speed, game_data.player.speed_while_shooting)
-				log("player speed", game_data.player.speed, game_data.player.speed_while_shooting)
-				log("pickup radius", game_data.money_pickup_radius)
-				log("stun time", game_data.enemy_stun_time)
-				log("reload speed", game_data.time_to_reload)
+				game_data.current_bullets_count =
+					game_data.max_bullets + game_data.weapon_max_bullets
+
 				reset_scene()
 				setup_scene_props()
 			}
@@ -2128,21 +2403,20 @@ game_play :: proc() {
 		}
 
 		if game_data.ui_state == .pause_menu {
-			draw_rect_center_xform(
-				transform_2d({0, 0}),
-				{auto_cast sapp.width(), auto_cast sapp.height()},
-				COLOR_BLACK - {0, 0, 0, 0.55},
-			)
+			w, h := get_ui_dimensions()
+
+
+			draw_rect_center_xform(transform_2d({0, 0}), {w, h}, COLOR_BLACK - {0, 0, 0, 0.55})
 			left_align_padding: f32 = 50
 
-			left_pos: f32 = -auto_cast sapp.width() * f32(0.5) + left_align_padding
+			left_pos: f32 = -auto_cast w * f32(0.5) + left_align_padding
 			button_spacing_y: f32 = 65
 
 
 			draw_text_outlined_center(transform_2d({0, 150}), "Paused..", 50, 4.0)
 
 			if text_button({left_pos, button_spacing_y}, "Resume", 40, 1) {
-				game_data.ui_state = .none
+				game_data.ui_state = nil
 			}
 			if text_button({left_pos, 0}, "Options", 40, 2) {
 
@@ -2152,7 +2426,7 @@ game_play :: proc() {
 
 			}
 			if text_button({left_pos, -button_spacing_y * 2}, "Exit", 40, 4) {
-				log("EXIT PRESSED")
+				log.info("EXIT PRESSED")
 				sapp.quit()
 			}
 
@@ -2160,11 +2434,8 @@ game_play :: proc() {
 		}
 
 		if game_data.ui_state == .player_death {
-			draw_rect_center_xform(
-				transform_2d({0, 0}),
-				{auto_cast sapp.width(), auto_cast sapp.height()},
-				COLOR_BLACK - {0, 0, 0, 0.65},
-			)
+			w, h := get_ui_dimensions()
+			draw_rect_center_xform(transform_2d({0, 0}), {w, h}, COLOR_BLACK - {0, 0, 0, 0.65})
 			button_pos_y: f32 = 0
 			button_font_size: f32 : 30
 			button_margin: f32 : 15
@@ -2199,7 +2470,7 @@ game_play :: proc() {
 			button_pos_y -= button_margin + button_size.y
 
 			if image_button({0, button_pos_y}, "Exit", button_font_size, 2, button_size) {
-				log("GAME QUIT PRESSED")
+				log.info("GAME QUIT PRESSED")
 				sapp.quit()
 			}
 		}
@@ -2224,6 +2495,8 @@ game_play :: proc() {
 		)
 	}
 
+	transition(app_dt)
+
 
 	{
 		// CLEANUP frame
@@ -2237,6 +2510,7 @@ game_play :: proc() {
 		cleanup_base_entity(&game_data.environment_prop)
 		cleanup_base_entity(&game_data.popup_text)
 		cleanup_base_entity(&game_data.bombs)
+		cleanup_base_entity(&game_data.blood)
 	}
 }
 
@@ -2268,11 +2542,35 @@ reset_ui_state :: proc() {
 
 ui_state: UiState
 
-import fstudio "../fmod/studio"
+import fstudio "../vendor/fmod/studio"
 has_played_song := false
 main_menu_song_instance: ^fstudio.EVENTINSTANCE
 main_menu :: proc() {
+	using game_data
+	dt: f32 = get_delta_time()
+	switch game_data.ux_anim_state {
 
+	case .fade_in:
+		reached := animate_to_target_f32(&ux_alpha, 1.0, dt, rate = 5.0, good_enough = 0.05)
+		if reached {
+			ux_anim_state = .hold
+			hold_end_time = app_now() + 1.5
+		}
+
+	case .hold:
+		if app_now() >= hold_end_time {
+			ux_anim_state = .fade_out
+		}
+
+	case .fade_out:
+
+	}
+	col := COLOR_WHITE
+	border_col := COLOR_BLACK
+	col.a = ux_alpha
+	border_col.a = ux_alpha
+
+	w, h := get_ui_dimensions()
 	if !has_played_song {
 		has_played_song = true
 		main_menu_song_instance = play_sound("event:/main_menu")
@@ -2287,41 +2585,127 @@ main_menu :: proc() {
 
 	draw_quad_center_xform(
 		transform_2d({0, 0}),
-		{auto_cast sapp.width(), auto_cast sapp.height()},
+		{w, h},
 		.background,
 		DEFAULT_UV,
-		{1, 1, 1, 0.3},
+		col - {0, 0, 0, 0.7},
 	)
 
-	draw_quad_center_xform(transform_2d({0, 180}), {320, 180} * 1.8, .logo)
+	draw_quad_center_xform(transform_2d({0, 180}), {320, 180} * 1.8, .logo, DEFAULT_UV, col)
 
 
-	if image_button(start_btn_pos, "Start Game", 38, 1, button_size) {
-		app_state = .GamePlay
-		stop_sound(main_menu_song_instance)
-		play_sound("event:/game_music")
+	if image_button(start_btn_pos, "Start Game", 38, 1, button_size, false, col, border_col) {
+		game_data.in_transition_timer = IN_TRANSITION_TIME
 	}
 	start_btn_pos.y -= button_size.y + padding
-	if image_button(start_btn_pos, "Options", 38, 2, button_size) {
+	if image_button(start_btn_pos, "Options", 38, 2, button_size, false, col, border_col) {
 	}
 	start_btn_pos.y -= button_size.y + padding
-	if image_button(start_btn_pos, "Exit", 38, 3, button_size) {
-		log("Exit pressed")
+	if image_button(start_btn_pos, "Exit", 38, 3, button_size, false, col, border_col) {
+		log.info("Exit pressed")
 		sapp.quit()
 	}
+
+
+	transition(dt)
 }
 
+init_time: time.Time
+seconds_since_init :: proc() -> f64 {
+	using time
+	if init_time._nsec == 0 {
+		log.error("invalid time")
+		return 0
+	}
+	return duration_seconds(since(init_time))
+}
+
+app_now :: seconds_since_init
+
+
+last_frame_time: f64
+actual_dt: f64
+
+get_delta_time :: proc() -> f32 {
+	return f32(actual_dt)
+}
 
 frame :: proc "c" () {
 	context = runtime.default_context()
+	start_frame_time := seconds_since_init()
+	actual_dt = start_frame_time - last_frame_time
+	defer last_frame_time = start_frame_time
+	if inputs.button_just_pressed[sapp.Keycode.F11] {
+		sapp.toggle_fullscreen()
+	}
+
 
 	update_sound()
-	switch app_state {
-	case .MainMenu:
+	switch game_data.app_state {
+	case .splash_logo:
+		set_ui_projection_alignment(.center_center)
+		using game_data
+		dt: f32 = get_delta_time()
+		switch game_data.ux_anim_state {
+
+		case .fade_in:
+			reached := animate_to_target_f32(&ux_alpha, 1.0, dt, rate = 5.0, good_enough = 0.05)
+			if reached {
+				ux_anim_state = .hold
+				hold_end_time = app_now() + 1.5
+			}
+
+		case .hold:
+			if app_now() >= hold_end_time {
+				ux_anim_state = .fade_out
+			}
+
+		case .fade_out:
+			reached := animate_to_target_f32(&ux_alpha, 0.0, dt, rate = 15.0, good_enough = 0.05)
+			if reached {
+				ux_state = {}
+				app_state = .splash_fmod
+			}
+		}
+		col := COLOR_WHITE
+		col.a = ux_alpha
+
+		draw_text_center_center(Matrix4(1), "A game by louidev..", 40, col)
+		draw_text_center_center(transform_2d({0, -60}), "Early demo v0.1", 30, col)
+
+	case .splash_fmod:
+		set_ui_projection_alignment(.center_center)
+		using game_data
+		dt: f32 = get_delta_time()
+		switch ux_anim_state {
+		case .fade_in:
+			reached := animate_to_target_f32(&ux_alpha, 1.0, dt, rate = 5.0, good_enough = 0.05)
+			if reached {
+				ux_anim_state = .hold
+				hold_end_time = app_now() + 1.5
+			}
+
+		case .hold:
+			if app_now() >= hold_end_time {
+				ux_anim_state = .fade_out
+			}
+
+		case .fade_out:
+			reached := animate_to_target_f32(&ux_alpha, 0.0, dt, rate = 15.0, good_enough = 0.05)
+			if reached {
+				ux_state = {}
+				app_state = .main_menu
+			}
+		}
+		col := COLOR_WHITE
+		col.a = ux_alpha
+		draw_quad_center_xform(Matrix4(1), get_image_size(.fmod_logo), .fmod_logo, DEFAULT_UV, col)
+	case .main_menu:
 		main_menu()
-	case .GamePlay:
+	case .game:
 		game_play()
 	}
+
 	reset_ui_state()
 
 	gfx_update()
@@ -2334,18 +2718,127 @@ cleanup :: proc "c" () {
 	sg.shutdown()
 }
 
+base_width: f32 : 1280
+base_height: f32 : 720
+
+
 main :: proc() {
+	_main()
+}
+
+@(export)
+_main :: proc "c" () {
+	context = runtime.default_context()
+	when ODIN_ARCH == .wasm32 {
+		context.allocator = emscripten_allocator()
+		context.logger = create_emscripten_logger()
+		context.assertion_failure_proc = web_assertion_failure_proc
+	} else {
+		context.logger = logger()
+	}
+
 	sapp.run(
 		{
 			init_cb = init,
 			frame_cb = frame,
 			cleanup_cb = cleanup,
 			event_cb = event_cb,
-			width = 1280,
-			height = 720,
+			width = auto_cast base_width,
+			height = auto_cast base_height,
 			window_title = "My Game",
 			icon = {sokol_default = true},
 			logger = {func = slog.func},
+			html5_use_emsc_set_main_loop = true,
+			html5_emsc_set_main_loop_simulate_infinite_loop = true,
+			html5_ask_leave_site = RELEASE,
 		},
 	)
+
+}
+
+
+IN_TRANSITION_TIME: f32 = 2.0
+OUT_TRANSITION_TIME: f32 = 2.0
+
+transition :: proc(dt: f32) {
+	set_ui_projection_alignment(.center_center)
+	width, height := get_ui_dimensions()
+
+	if game_data.in_transition_timer <= 0 {
+		if game_data.out_transition_timer > 0 {
+			current_value_out := ease_over_time(
+				game_data.out_transition_timer,
+				OUT_TRANSITION_TIME,
+				.Cubic_Out,
+				width + width,
+				width,
+			)
+			game_data.out_transition_timer -= dt
+			draw_transition(false, current_value_out)
+		}
+		return
+	}
+
+
+	game_data.in_transition_timer -= dt
+
+	if game_data.in_transition_timer <= 0 && game_data.app_state == .main_menu {
+		game_data.out_transition_timer = OUT_TRANSITION_TIME
+		game_data.app_state = .game
+		play_sound("event:/game_music")
+		stop_sound(main_menu_song_instance)
+	}
+
+	current_value_in := ease_over_time(
+		game_data.in_transition_timer,
+		IN_TRANSITION_TIME,
+		.Cubic_In,
+		width,
+		0,
+	)
+
+
+	draw_transition(true, current_value_in)
+
+}
+
+transition_size: Vector2 : {64, 128}
+draw_transition :: proc(inwards: bool, current_value: f32) {
+
+	width, height := get_ui_dimensions()
+
+	amount_to_draw: f32 = height / transition_size.y
+	draw_rect_xform(
+		transform_2d({-width + current_value - 1, -height * 0.5} - {width * 0.5, 0}),
+		{width + 2, height},
+		hex_to_rgb(0x25131a),
+	)
+	for i := 0; i <= auto_cast amount_to_draw; i += 1 {
+		if inwards {
+			draw_quad_xform(
+				transform_2d(
+					{
+						-width * 0.5 + current_value,
+						0.5 * -height + transition_size.y * auto_cast i,
+					},
+				),
+				transition_size,
+				.transition,
+			)
+		} else {
+			draw_quad_xform(
+				transform_2d(
+					{
+						-width * 0.5 + current_value - width,
+						0.5 * -height + transition_size.y + transition_size.y * auto_cast i,
+					},
+					math.to_radians_f32(180),
+				),
+				transition_size,
+				.transition,
+			)
+
+
+		}
+	}
 }

@@ -1,6 +1,6 @@
 
 package main
-import sapp "../sokol/app"
+import sapp "../vendor/sokol/app"
 import "base:runtime"
 import "core:fmt"
 

@@ -40,6 +40,8 @@ Enemy :: struct {
 	bullets_fired:         int,
 	statuses:              [Status]bool,
 	statuses_timers:       [Status]f32,
+	damage:                f32,
+	rotation:              f32,
 }
 
 EnemyState :: enum {
@@ -61,36 +63,48 @@ EnemyType :: enum {
 	GUNNER,
 	EXPLOSIVE_CHASER,
 	TANK,
+	DISK,
 }
+
+create_enemy :: proc(health: f32, position: Vector2 = V2_ZERO, speed: f32 = 20) -> Entity {
+	entity := DEFAULT_ENT
+	last_id += 1
+	entity.id = last_id
+	entity.health = health + WAVE_ENEMY_HEALTH_MODIFIER * auto_cast game_data.current_wave
+	entity.max_health = entity.health
+	entity.position = position
+	return entity
+}
+
 
 create_bat :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(20, position)
+	enemy.entity = create_enemy(20, position)
 	enemy.type = .BAT
-	enemy.speed = 28
+	enemy.speed = 35
 	enemy.weapon_cooldown_timer = 10
 	enemy.id = last_id
 	enemy.attack_timer = BAT_ATTACK_TIME
-	enemy.statuses[.Frozen] = true
+	enemy.damage = 5
 	return enemy
 }
 
 create_crawler :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(20, position)
+	enemy.entity = create_enemy(20, position)
 	enemy.type = .CRAWLER
 	enemy.speed = 20
 	enemy.id = last_id
-	enemy.statuses[.Poison] = true
+	enemy.damage = 4
 	return enemy
 }
 
 create_bull :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(50, position)
+	enemy.entity = create_enemy(50, position)
 	enemy.type = .BULL
 	enemy.speed = 18
-
+	enemy.damage = 10
 	enemy.id = last_id
 	return enemy
 }
@@ -98,78 +112,94 @@ create_bull :: proc(position: Vector2) -> Enemy {
 
 create_slug :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(50, position)
+	enemy.entity = create_enemy(50, position)
 	enemy.type = .SLUG
 	enemy.speed = 15
 	enemy.id = last_id
-	enemy.statuses[.Frozen] = true
-
+	enemy.damage = 5
 	return enemy
 }
 
 create_bby_slug :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(10, position)
+	enemy.entity = create_enemy(10, position)
 	enemy.type = .BBY_SLUG
 	enemy.speed = 20
 	enemy.id = last_id
+	enemy.damage = 2
 	return enemy
 }
 
 create_explosive_chaser :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(30, position)
+	enemy.entity = create_enemy(30, position)
 	enemy.type = .EXPLOSIVE_CHASER
 	enemy.speed = 15
 	enemy.id = last_id
+
 	return enemy
 }
 
 create_jumper :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(30, position)
+	enemy.entity = create_enemy(30, position)
 	enemy.type = .JUMPER
 	enemy.speed = 18
 	enemy.id = last_id
 	enemy.attack_timer = JUMPER_ATTACK_TIME
 	enemy.state = .WALKING
+	enemy.damage = 8
 	return enemy
 }
 
 
 create_gunner :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(20, position)
+	enemy.entity = create_enemy(20, position)
 	enemy.type = .GUNNER
 	enemy.speed = 25
 	enemy.id = last_id
 	enemy.attack_timer = GUNNER_ATTACK_TIME
 	enemy.state = .WALKING
+	enemy.damage = 4
 	return enemy
 }
 
 create_chaser :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(30, position)
+	enemy.entity = create_enemy(30, position)
 	enemy.type = .CHASER
 	enemy.speed = 35
 	enemy.id = last_id
 	enemy.attack_timer = GUNNER_ATTACK_TIME
 	enemy.state = .WALKING
+	enemy.damage = 5
 	return enemy
 }
 
 create_tank :: proc(position: Vector2) -> Enemy {
 	enemy: Enemy
-	enemy.entity = create_entity(100, position)
+	enemy.entity = create_enemy(100, position)
 	enemy.type = .TANK
 	enemy.speed = 10
 	enemy.id = last_id
 	enemy.attack_timer = GUNNER_ATTACK_TIME
 	enemy.state = .WALKING
+	enemy.damage = 10
 	return enemy
 }
 
+create_disk :: proc(position: Vector2) -> Enemy {
+	enemy: Enemy
+	enemy.entity = create_enemy(100, position)
+	enemy.type = .DISK
+	enemy.speed = DISK_SPEED
+	enemy.id = last_id
+	enemy.state = .WALKING
+	enemy.damage = 40
+	enemy.velocity = quad_directions[rand.int_max(len(quad_directions))] * DISK_SPEED
+	return enemy
+}
 
 create_bby_slugs :: proc(position: Vector2) {
 	num := rand.int_max(4) + 2
@@ -252,6 +282,25 @@ move_entity_towards_player :: proc(entity: ^Enemy, dt: f32, speed: f32) {
 	if can_move_y {
 		entity.position.y = y
 	}
+
+	if !can_move_x && !can_move_y {
+		if !can_move_x {
+			move_direction.x = 0
+			move_direction.y += 0.5 * math.sign(target_position.y - entity.position.y)
+		}
+
+		if !can_move_y {
+			move_direction.y = 0
+			move_direction.x += 0.5 * math.sign(target_position.x - entity.position.x)
+		}
+
+		move_direction = linalg.normalize(move_direction)
+
+		entity.position.x += move_direction.x * speed * dt
+		entity.position.y += move_direction.y * speed * dt
+	}
+
+
 }
 
 
@@ -305,7 +354,7 @@ jumper_update_logic :: proc(entity: ^Enemy, dt: f32) {
 }
 
 
-BAT_FIRE_DIST :: 50
+BAT_FIRE_DIST :: 65
 
 bat_update_logic :: proc(entity: ^Enemy, dt: f32) {
 	target_position := game_data.player.position
@@ -317,7 +366,12 @@ bat_update_logic :: proc(entity: ^Enemy, dt: f32) {
 			entity.attack_timer = BAT_ATTACK_TIME
 			rotation_z := calc_rotation_to_target(target_position, entity.position)
 			attack_direction: Vector2 = {math.cos(rotation_z), math.sin(rotation_z)}
-			create_enemy_projectile(entity.position, rotation_z, attack_direction * 50)
+			create_enemy_projectile(
+				entity.position,
+				rotation_z,
+				attack_direction * 75,
+				entity.damage,
+			)
 			entity.state = .ATTACKING
 		} else {
 			entity.state = .WALKING
@@ -353,7 +407,12 @@ gunner_update_logic :: proc(entity: ^Enemy, dt: f32) {
 					delta_x := PLAYER_GUN_MOVE_DIST * math.cos(-rotation_z)
 					delta_y := PLAYER_GUN_MOVE_DIST * math.sin(-rotation_z)
 					attack_position: Vector2 = entity.position + {delta_x, -delta_y}
-					create_enemy_projectile(attack_position, rotation_z, attack_direction * 80)
+					create_enemy_projectile(
+						attack_position,
+						rotation_z,
+						attack_direction * 80,
+						entity.damage,
+					)
 				}
 			} else {
 				entity.attack_timer = GUNNER_ATTACK_TIME
@@ -364,6 +423,57 @@ gunner_update_logic :: proc(entity: ^Enemy, dt: f32) {
 		entity.state = .WALKING
 	}
 	move_entity_towards_player(entity, dt, speed)
+}
+
+quad_directions: [4]Vector2 = {{1, 1}, {1, -1}, {-1, -1}, {-1, 1}}
+DISK_SPEED: f32 : 70
+disk_update_logic :: proc(entity: ^Enemy, dt: f32) {
+	potential_pos := entity.position + entity.velocity * dt
+	entity.rotation += dt * 30
+	// left wall
+	if check_wall_collision(potential_pos, entity.collision_radius, WALLS[0]) {
+		reflection := linalg.reflect(linalg.normalize(entity.velocity), Vector2{1, 0})
+		entity.velocity = reflection * entity.speed
+		potential_pos := entity.position + entity.velocity * dt
+	} else if check_wall_collision(potential_pos, entity.collision_radius, WALLS[1]) {
+		reflection := linalg.reflect(linalg.normalize(entity.velocity), Vector2{0, 1})
+		entity.velocity = reflection * entity.speed
+		potential_pos := entity.position + entity.velocity * dt
+	} else if check_wall_collision(potential_pos, entity.collision_radius, WALLS[2]) {
+		reflection := linalg.reflect(linalg.normalize(entity.velocity), Vector2{-1, 0})
+		entity.velocity = reflection * entity.speed
+		potential_pos := entity.position + entity.velocity * dt
+	} else if check_wall_collision(potential_pos, entity.collision_radius, WALLS[3]) {
+		reflection := linalg.reflect(linalg.normalize(entity.velocity), Vector2{0, -1})
+		entity.velocity = reflection * entity.speed
+		potential_pos := entity.position + entity.velocity * dt
+	}
+
+	entity.position = potential_pos
+
+	for &enemy in game_data.enemies {
+		if !enemy.active || enemy.stun_timer > 0 || enemy.type == .DISK {
+			continue
+		}
+
+		if circles_overlap(
+			enemy.position,
+			enemy.collision_radius,
+			entity.position,
+			entity.collision_radius,
+		) {
+			damage_enemy(&enemy, entity.damage, linalg.normalize(entity.velocity))
+		}
+	}
+
+	if circles_overlap(
+		game_data.player.position,
+		game_data.player.collision_radius,
+		entity.position,
+		entity.collision_radius,
+	) {
+		damage_player(entity.damage, .projectile)
+	}
 }
 
 
@@ -426,7 +536,7 @@ bull_update_logic :: proc(entity: ^Enemy, dt: f32) {
 			game_data.player.position,
 			4,
 		) {
-			damage_player(1, .physical)
+			damage_player(entity.damage, .physical)
 		}
 	}
 
@@ -440,21 +550,23 @@ get_min_wave_for_enemy_spawn :: proc(enemy_type: EnemyType) -> int {
 	case .BAT:
 		return 1
 	case .BULL:
-		return 3
+		return 6
 	case .SLUG:
 		return 2
 	case .BBY_SLUG:
-		return 10000
+		return 1
 	case .EXPLOSIVE_CHASER:
-		return 1
+		return 4
 	case .JUMPER:
-		return 1
+		return 2
 	case .GUNNER:
-		return 3
+		return 5
 	case .CHASER:
-		return 1
+		return 2
 	case .TANK:
-		return 1
+		return 3
+	case .DISK:
+		return 7
 	}
 
 	return 0
@@ -467,9 +579,9 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	case .BAT:
 		return 0.25
 	case .BULL:
-		return 0.1
+		return 0.05
 	case .SLUG:
-		return 0.1
+		return 0.2
 	case .BBY_SLUG:
 		return 0
 	case .EXPLOSIVE_CHASER:
@@ -481,7 +593,9 @@ get_enemy_base_propability :: proc(enemy_type: EnemyType) -> f32 {
 	case .CHASER:
 		return 0.2
 	case .TANK:
-		return 0.1
+		return 0.15
+	case .DISK:
+		return .01
 	}
 
 	return 0
@@ -563,6 +677,8 @@ spawn_enemy_group :: proc(amount_to_spawn: int) {
 			append(&game_data.enemies, create_chaser(position))
 		case .TANK:
 			append(&game_data.enemies, create_tank(position))
+		case .DISK:
+			append(&game_data.enemies, create_disk(position))
 		}
 
 
@@ -579,6 +695,7 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 	case .EXPLOSIVE_CHASER:
 	case .CHASER:
 	case .TANK:
+	case .DISK:
 
 	case .GUNNER:
 	case .JUMPER:
@@ -592,8 +709,9 @@ knockback_enemy :: proc(enemy: ^Enemy, direction: Vector2) {
 
 	}
 
-	if enemy.type == .EXPLOSIVE_CHASER ||
-	   enemy.type == .BULL && enemy.attack_direction != V2_ZERO {
+	if enemy.stun_timer > 0 ||
+	   enemy.type == .BULL && enemy.attack_direction != V2_ZERO ||
+	   enemy.type == .DISK {
 		return
 	}
 
@@ -643,7 +761,7 @@ damage_enemy :: proc(e: ^Enemy, damage_to_deal: f32, bullet_velocity: Vector2) {
 	popup_txt.scale = scale
 	popup_txt.position = e.position
 	popup_txt.color = color
-	play_sound("event:/enemy_hit", e.position)
+	play_sound("event:/enemy_hit", e.position, 20)
 	append(&game_data.popup_text, popup_txt)
 
 	if e.health <= 0 {
@@ -683,7 +801,7 @@ enemy_update :: proc(enemy: ^Enemy, dt: f32) {
 		enemy.state = .WALKING
 
 		if circles_overlap(enemy.position, enemy.collision_radius, game_data.player.position, 4) {
-			damage_player(1, .physical)
+			damage_player(enemy.damage, .physical)
 		}
 	case .BAT:
 		bat_update_logic(enemy, dt)
@@ -695,6 +813,8 @@ enemy_update :: proc(enemy: ^Enemy, dt: f32) {
 		jumper_update_logic(enemy, dt)
 	case .GUNNER:
 		gunner_update_logic(enemy, dt)
+	case .DISK:
+		disk_update_logic(enemy, dt)
 	}
 
 }

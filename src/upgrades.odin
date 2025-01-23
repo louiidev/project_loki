@@ -15,7 +15,7 @@ Upgrade :: enum {
 	BULLETS,
 	BIGGER_BULLETS,
 	BULLET_DMG,
-	BULLETS_CAUSE_POISION,
+	BULLETS_CAUSE_POISON,
 	BULLETS_CAUSE_FREEZE,
 	BULLET_RANGE_UP,
 	EXPLODING_ENEMIES,
@@ -29,11 +29,15 @@ Upgrade :: enum {
 	ROTATING_ORB,
 	ORB_DAMAGE_INCREASE,
 
-	INCREASE_POISION_DMG,
+	INCREASE_poison_DMG,
 	INCREASE_FREEZE_SLOWDOWN,
 	INCREASE_EXPLOSIVE_DMG,
 	POISON_CAUSES_SLOWDOWN,
 	INCREASE_POISON_SLOWDOWN,
+	SHOTGUN,
+	SMG,
+	SNIPER,
+	MACHINE_GUN
 }
 
 
@@ -108,9 +112,9 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 	case .MAX_HEALTH:
 		return "Max Health +1"
 	case .HEALTH:
-		return "Health +1"
+		return "Health +4"
 	case .HEALTH_2:
-		return "Health +2"
+		return "Health +8"
 	case .PIERCING_SHOT:
 		return "Piecing Shot"
 	case .RELOAD_SPEED:
@@ -143,20 +147,29 @@ get_upgrade_heading :: proc(upgrade: Upgrade) -> string {
 		return "Increases Bullet Damage"
 	case .BULLETS_CAUSE_FREEZE:
 		return "Bullets Freeze"
-	case .BULLETS_CAUSE_POISION:
-		return "Poision Bullets"
+	case .BULLETS_CAUSE_POISON:
+		return "poison Bullets"
 	case .INCREASE_FREEZE_SLOWDOWN:
 		return "Freeze Slowdown"
-	case .INCREASE_POISION_DMG:
-		return "Poision DMG"
+	case .INCREASE_poison_DMG:
+		return "poison DMG"
 	case .INCREASE_EXPLOSIVE_DMG:
 		return "Explosive DMG Up"
 	case .POISON_CAUSES_SLOWDOWN:
-		return "Poision Slowdown"
+		return "poison Slowdown"
 	case .INCREASE_POISON_SLOWDOWN:
 		return "Increase Poison Slowdown"
 	case .BULLET_RANGE_UP:
 		return "Increase Bullet range"
+	case .SHOTGUN:
+		return "Shotgun"
+	case .SMG:
+		return "SMG"
+	case .SNIPER:
+		return "Sniper"
+	case .MACHINE_GUN:
+		return "Machine Gun"
+
 	}
 
 
@@ -172,11 +185,11 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 	case .BOUNCE_SHOT:
 		return "Bounces off enemy after hit"
 	case .HEALTH:
-		return "Replenishes the players health by +1"
+		return "Replenishes the players health by +4"
 	case .HEALTH_2:
-		return "Replenishes the players health by +2"
+		return "Replenishes the players health by +8"
 	case .MAX_HEALTH:
-		return "Upgrades the players max health by +1"
+		return "Upgrades the players max health by +4"
 	case .PIERCING_SHOT:
 		return "Pierces through enemies"
 	case .RELOAD_SPEED:
@@ -209,10 +222,10 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 		return fmt.tprintf("Increases Bullet Damage by %.0f%%", percentage)
 	case .BULLETS_CAUSE_FREEZE:
 		return fmt.tprintf("Increases Change of enemy freeze on hit by %.0f%%", percentage)
-	case .BULLETS_CAUSE_POISION:
-		return fmt.tprintf("Increases Change of enemy poision on hit by %.0f%%", percentage)
-	case .INCREASE_POISION_DMG:
-		return fmt.tprintf("Increases Poision Damage by %.0f%%", percentage)
+	case .BULLETS_CAUSE_POISON:
+		return fmt.tprintf("Increases Change of enemy poison on hit by %.0f%%", percentage)
+	case .INCREASE_poison_DMG:
+		return fmt.tprintf("Increases poison Damage by %.0f%%", percentage)
 	case .INCREASE_FREEZE_SLOWDOWN:
 		return fmt.tprintf("Increases Freeze Slowdown by %.0f%%", percentage)
 	case .INCREASE_EXPLOSIVE_DMG:
@@ -220,9 +233,17 @@ get_upgrade_description :: proc(upgrade: Upgrade) -> string {
 	case .INCREASE_POISON_SLOWDOWN:
 			return fmt.tprintf("Increases Poison Slowdown by %.0f%%", percentage)
 	case .POISON_CAUSES_SLOWDOWN:
-			return fmt.tprintf("Poision enemies are slower", percentage)
+			return fmt.tprintf("poison enemies are slower", percentage)
 	case .BULLET_RANGE_UP:
 			return fmt.tprintf("Increases Bullet Range by %.0f%%", percentage)
+	case .SHOTGUN:
+		return "+bullets per shot, +DMG, -Range, -Ammo, -Reload time, -Spread"
+	case .SMG:
+		return "+Fire rate, -DMG, +Ammo, +Reload Time, -Spread"
+	case .SNIPER:
+		return "+DMG, +Range, -Reload time, +Spread, +Piercing"
+	case .MACHINE_GUN:
+		return "+Fire rate, -DMG, +Ammo, -Reload Time, -Spread"
 	}
 
 
@@ -263,15 +284,15 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 	case .HEALTH:
 		game_data.player.health = math.min(
 			game_data.player.max_health,
-			game_data.player.health + 1,
+			game_data.player.health + 4,
 		)
 	case .MAX_HEALTH:
-		game_data.player.max_health += 1
+		game_data.player.max_health += 4
 
 	case .HEALTH_2:
 		game_data.player.health = math.min(
 			game_data.player.max_health,
-			game_data.player.health + 2,
+			game_data.player.health + 8,
 		)
 
 	case .RELOAD_SPEED:
@@ -283,7 +304,6 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 		increase_upgrade_by_percentage(percentage, &game_data.bullet_scale)
 	case .WALKING_SPEED:
 		increase_upgrade_by_percentage(percentage, &game_data.player.speed)
-		increase_upgrade_by_percentage(percentage, &game_data.player.speed_while_shooting)
 	case .PICKUP_RADIUS:
 		increase_upgrade_by_percentage(percentage, &game_data.money_pickup_radius)
 	case .STUN_TIME:
@@ -294,9 +314,9 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 		increase_upgrade_by_percentage(percentage, &game_data.bullet_dmg)
 	case .BULLETS_CAUSE_FREEZE:
 		increase_upgrade_by_percentage(percentage, &game_data.bullet_freeze_chance)
-	case .BULLETS_CAUSE_POISION:
-		increase_upgrade_by_percentage(percentage, &game_data.bullet_poision_chance)
-	case .INCREASE_POISION_DMG:
+	case .BULLETS_CAUSE_POISON:
+		increase_upgrade_by_percentage(percentage, &game_data.bullet_poison_chance)
+	case .INCREASE_poison_DMG:
 		increase_upgrade_by_percentage(percentage, &game_data.poison_dmg)
 	case .INCREASE_FREEZE_SLOWDOWN:
 		decrease_upgrade_by_percentage(percentage, &game_data.freeze_slowdown)
@@ -314,7 +334,14 @@ purchase_shop_upgrade :: proc(shop_upgrade: ^ShopUpgrade) {
 		increase_upgrade_by_percentage(percentage, &game_data.chance_for_piercing_shot)
 	case .BULLET_RANGE_UP:
 		increase_upgrade_by_percentage(percentage, &game_data.bullet_range)
-
+	case .SHOTGUN:
+		add_shotgun_to_player()
+	case .SMG:
+		add_smg_to_player()
+	case .MACHINE_GUN:
+		add_machine_gun_to_player()
+	case .SNIPER:
+		add_sniper_to_player()
 
 	}
 
@@ -364,9 +391,9 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 		return 4
 	case .BULLETS_CAUSE_FREEZE:
 		return 4
-	case .BULLETS_CAUSE_POISION:
+	case .BULLETS_CAUSE_POISON:
 		return 4
-	case .INCREASE_POISION_DMG:
+	case .INCREASE_poison_DMG:
 		return 4
 	case .INCREASE_FREEZE_SLOWDOWN:
 		return 4
@@ -378,7 +405,14 @@ get_upgrade_cost :: proc(upgrade: Upgrade) -> int {
 		return 2
 	case .BULLET_RANGE_UP:
 		return 1
-
+	case .SHOTGUN:
+		return 10
+	case .SMG:
+		return 8
+	case .MACHINE_GUN:
+		return 8
+	case .SNIPER:
+		return 10
 	}
 
 	return 0
@@ -428,10 +462,10 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return 0.1
 	case .BULLETS_CAUSE_FREEZE:
 		return 0.1
-	case .BULLETS_CAUSE_POISION:
+	case .BULLETS_CAUSE_POISON:
 		return 0.1
-	case .INCREASE_POISION_DMG:
-		return only_if_has_upgrade(.BULLETS_CAUSE_POISION) * 0.1
+	case .INCREASE_poison_DMG:
+		return only_if_has_upgrade(.BULLETS_CAUSE_POISON) * 0.1
 	case .INCREASE_FREEZE_SLOWDOWN:
 		return only_if_has_upgrade(.BULLETS_CAUSE_FREEZE) * 0.1
 	case .INCREASE_EXPLOSIVE_DMG:
@@ -440,12 +474,20 @@ get_upgrade_propability :: proc(upgrade: Upgrade) -> f32 {
 		return 0.3
 	case .POISON_CAUSES_SLOWDOWN:
 		return (
-			only_if_has_upgrade(.BULLETS_CAUSE_POISION) *
+			only_if_has_upgrade(.BULLETS_CAUSE_POISON) *
 			0.1 *
 			only_if_dont_have_upgrade(.POISON_CAUSES_SLOWDOWN)
 		)
 	case .INCREASE_POISON_SLOWDOWN:
 		return only_if_has_upgrade(.POISON_CAUSES_SLOWDOWN) * 0.1
+	case .SHOTGUN:
+		return only_if_dont_have_upgrade(.SHOTGUN) * 0.1
+	case .SMG:
+		return only_if_dont_have_upgrade(.SMG) * 0.2
+	case .SNIPER:
+			return only_if_dont_have_upgrade(.SNIPER) * 0.1
+	case .MACHINE_GUN:
+			return only_if_dont_have_upgrade(.MACHINE_GUN) * 0.2
 	}
 
 	return 0
@@ -470,7 +512,7 @@ should_spawn_upgrade :: proc(upgrade: Upgrade) -> bool {
 		return false
 	}
 	rand_chance:= rand.float32_range(0.01, 1.0) * 100.0
-	log(upgrade, get_chance_percentage(upgrade) * 100.0, rand_chance)
+	// log(upgrade, get_chance_percentage(upgrade) * 100.0, rand_chance)
 	
 	return (get_chance_percentage(upgrade) * 100) >= rand_chance
 
@@ -485,7 +527,7 @@ get_chance_percentage :: proc(upgrade: Upgrade) -> f32 {
 	case .STUN_TIME:
 	case .ORB_DAMAGE_INCREASE:
 	case .BULLET_DMG:
-	case .INCREASE_POISION_DMG:
+	case .INCREASE_poison_DMG:
 	case .AMMO_UPGRADE:
 	case .BIGGER_BULLETS:
 	case .BOUNCE_SHOT:
@@ -502,6 +544,10 @@ get_chance_percentage :: proc(upgrade: Upgrade) -> f32 {
 	case .POISON_CAUSES_SLOWDOWN:
 	case .BULLET_RANGE_UP:
 	case .CRITS_CAUSE_EXPLOSIONS:
+	case .SHOTGUN:
+	case .SMG:
+	case .SNIPER:
+	case .MACHINE_GUN:
 
 	case .PIERCING_SHOT:
 		return game_data.chance_for_piercing_shot
@@ -509,8 +555,8 @@ get_chance_percentage :: proc(upgrade: Upgrade) -> f32 {
 		return game_data.chance_bomb_drop_reload
 	case .BULLETS_CAUSE_FREEZE:
 		return game_data.bullet_freeze_chance
-	case .BULLETS_CAUSE_POISION:
-		return game_data.bullet_poision_chance
+	case .BULLETS_CAUSE_POISON:
+		return game_data.bullet_poison_chance
 	case .EXPLODING_ENEMIES:
 		return game_data.chance_enemy_explodes
 	

@@ -1,12 +1,13 @@
 package main
 
-import sg "../sokol/gfx"
+import sg "../vendor/sokol/gfx"
+import stbi "../vendor/stb-web/image"
+import stbrp "../vendor/stb-web/rect_pack"
+import stbtt "../vendor/stb-web/truetype"
 import "core:fmt"
+import "core:log"
 import "core:mem"
-import "core:os"
-import stbi "vendor:stb/image"
-import stbrp "vendor:stb/rect_pack"
-import stbtt "vendor:stb/truetype"
+import "os"
 
 char_count :: 96
 font_bitmap_w :: 256 * 2
@@ -40,15 +41,16 @@ init_fonts :: proc() {
 		&font.char_data[0],
 	)
 	assert(ret > 0, "not enough space in bitmap")
-
-	stbi.write_png(
-		"font.png",
-		auto_cast font_bitmap_w,
-		auto_cast font_bitmap_h,
-		1,
-		bitmap,
-		auto_cast font_bitmap_w,
-	)
+	when ODIN_OS == .Windows {
+		stbi.write_png(
+			"font.png",
+			auto_cast font_bitmap_w,
+			auto_cast font_bitmap_h,
+			1,
+			bitmap,
+			auto_cast font_bitmap_w,
+		)
+	}
 
 	InitFont(&font.font_info, raw_data(ttf_data), 0)
 
@@ -64,7 +66,7 @@ init_fonts :: proc() {
 	}
 	font_image = sg.make_image(desc)
 	if font_image.id == sg.INVALID_ID {
-		fmt.println("failed to make image")
+		log.error("failed to make image")
 	}
 
 }

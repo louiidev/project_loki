@@ -18,6 +18,7 @@ Permanence :: struct {
 	direction:     Vector2,
 	velocity:      Vector2,
 	scale:         f32,
+	flip_x:        bool,
 }
 
 
@@ -78,6 +79,7 @@ create_enemybody_permanence :: proc(e: ^Enemy, velocity: Vector2) {
 	perm.enemy_type = e.type
 	perm.frame = {1, auto_cast e.type}
 	perm.velocity = velocity
+	perm.flip_x = e.flip_x
 	append(&game_data.permanence, perm)
 }
 
@@ -197,10 +199,14 @@ render_update_permanence :: proc(dt: f32) {
 			}
 
 			flash_amount: f32 = permanence.life_time >= permanence.max_life_time - 0.3 ? 1 : 0
+			scale := V2_ONE
 
+			if permanence.flip_x {
+				scale.x = -1
+			}
 			uv := get_frame_uvs(.enemies, permanence.frame, {18, 18})
 			draw_quad_center_xform(
-				transform_2d(permanence.position, permanence.rotation),
+				transform_2d(permanence.position, permanence.rotation, scale),
 				{18, 18},
 				.enemies,
 				uv,
