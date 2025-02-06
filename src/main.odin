@@ -2710,7 +2710,7 @@ frame :: proc "c" () {
 
 	gfx_update()
 	inputs_end_frame()
-
+	// free_all(context.temp_allocator)
 }
 
 cleanup :: proc "c" () {
